@@ -1,0 +1,6 @@
+---
+rules:
+  line-length: disable
+  truthy: false
+  octal-values: enable
+  comments-indentation: False

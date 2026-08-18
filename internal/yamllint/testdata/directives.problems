@@ -1,0 +1,6 @@
+6:7 truthy truthy value should be one of [false, true]
+8:161 line-length line too long (178 > 160 characters)
+11:9 colons too many spaces after colon
+13:8 colons too many spaces before colon
+17:7 colons too many spaces after colon
+17:8 truthy truthy value should be one of [false, true]

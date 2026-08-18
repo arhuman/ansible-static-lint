@@ -1,0 +1,18 @@
+---
+- name: A block sequence play # inline comment
+  hosts: all
+  vars:
+    a_map: {inline: true, n: 1}
+    a_seq: [1, 2, 3]
+    anchored: &a value
+    alias_use: *a
+    tagged: !!str yes
+    multi: >
+      folded text
+      more text
+    lit: |
+      literal line
+  tasks:
+    - name: T
+      debug:
+        msg: "double \" quoted"

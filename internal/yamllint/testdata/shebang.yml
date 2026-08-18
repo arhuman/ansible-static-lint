@@ -1,0 +1,4 @@
+#!/usr/bin/env ansible-playbook
+---
+key: ok
+#bad comment

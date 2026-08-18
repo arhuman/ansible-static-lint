@@ -1,0 +1,17 @@
+---
+# yamllint disable rule:truthy rule:octal-values
+key: yes
+oct: 0777
+# yamllint enable rule:truthy
+key2: yes
+key3: 0777
+long: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+# yamllint disable-line rule:line-length
+long2: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+spaced:  value  # comment
+next_disable: ok  # yamllint disable-line rule:colons
+spaced2 : v
+# yamllint disable
+anything:   True   
+# yamllint enable
+tail:  True

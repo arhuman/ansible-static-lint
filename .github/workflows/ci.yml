@@ -1,0 +1,128 @@
+# CI for ansible-static-lint. Calls `make` targets so CI and local never drift.
+# Tool versions are pinned here and in the Makefile; keep the two equal.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: CI only reads the repo. release.yml gets write.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor = the go.mod minimum (keep in sync); "stable" = latest release,
+        # which is also what release.yml ships with.
+        go: ["1.26", "stable"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+      # `make check` builds, so it replaces a bare `make build` here. It is also
+      # the README quickstart, which keeps the first command a newcomer types
+      # from being the one command nothing verifies.
+      - name: Build and smoke check the examples
+        run: make check
+      - name: Test (race)
+        run: make test
+
+  lint:
+    name: lint + vuln + coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      # Pre-install the pinned tools so `make audit` reuses them instead of
+      # bootstrapping via `make tools`. Versions MUST equal the Makefile's.
+      - name: Install pinned tools
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      # make audit = coverage gate + go mod verify + golangci-lint + govulncheck.
+      # One code path, local and CI.
+      - name: Audit
+        run: make audit
+
+  parity:
+    name: ansible-lint output parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ansible-static-lint
+      # The reference corpus and frozen ansible-lint output live in a separate
+      # repository because they carry ansible-lint test data (GPL-3.0-or-later).
+      # ansible-static-lint itself ships none of it and stays MIT, so the corpus is fetched
+      # here rather than vendored.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: arhuman/astl-compatibility-check
+          path: astl-compatibility-check
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: Assert output parity against the frozen corpus
+        run: make -C ansible-static-lint parity
+
+  bench:
+    name: speed guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ansible-static-lint
+      # Same split as the parity job, and for the same licensing reason: the
+      # corpus this is timed against is ansible-lint test data.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: arhuman/astl-compatibility-check
+          path: astl-compatibility-check
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      # The budget is ~4x the current time, so a shared runner's noise cannot
+      # trip it; only a structural regression does. astl's speed is the reason
+      # it exists, and until this ran here nothing measured it automatically.
+      - name: Assert the corpus lints within its budget
+        run: make -C ansible-static-lint bench
+
+  commitlint:
+    name: commit messages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Conventional Commits on PR commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9/_.-]+\))?(!)?: .+'
+          fail=0
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            subject=$(git log -1 --format=%s "$sha")
+            if ! printf '%s' "$subject" | grep -qE "$pattern"; then
+              echo "::error::commit $sha is not Conventional Commits: '$subject'"
+              fail=1
+            fi
+          done
+          exit $fail

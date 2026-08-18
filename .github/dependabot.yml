@@ -1,0 +1,26 @@
+# Weekly dependency updates.
+# gomod PRs are prefixed `build`, github-actions PRs `ci`, matching Conventional
+# Commits so the commitlint gate in ci.yml passes.
+#
+# Every `uses:` is pinned to a commit SHA with the version in a trailing
+# comment, because a tag is mutable and release.yml signs and publishes
+# binaries: an action whose tag moved would produce a tampered artifact
+# carrying a valid signature. This job is what keeps the pins from rotting, and
+# it rewrites the SHA and the comment together.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci

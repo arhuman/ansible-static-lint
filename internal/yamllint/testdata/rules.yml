@@ -1,0 +1,28 @@
+---
+anchors:
+  bad: *undeclared
+dup: 1
+dup: 2
+braces: {  a: 1 }
+brackets: [ 1,2,  3 ]
+colon : x
+commas: [1 , 2]
+#nospace
+inline: 1 # ok one space
+hyphen:
+  -  spaced
+empty:
+
+
+
+after: yes
+octal: 0777
+explicit: 0o777
+trailing: "v"   
+indent:
+   three: spaces
+after_colon:  x
+truthy_key:
+  True: 1
+long_line: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bb"
+no_newline: end

@@ -1,0 +1,145 @@
+name: ansible-static-lint
+description: Static Ansible linting with no Ansible runtime and no environment setup.
+author: Arnaud Assad
+
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  paths:
+    description: Paths to lint, space separated.
+    required: false
+    default: "."
+  version:
+    description: >-
+      Release to run, with or without the leading v. "latest" resolves the
+      newest release when the job runs.
+    required: false
+    default: latest
+  format:
+    description: Output format, pep8 or sarif.
+    required: false
+    default: pep8
+  ids:
+    description: Rule identifier taxonomy, upstream or native.
+    required: false
+    default: upstream
+  config:
+    description: Config file to read instead of searching for one.
+    required: false
+    default: ""
+  output:
+    description: >-
+      Write astl's stdout to this file instead of the job log. Required when a
+      later step consumes the output, as a SARIF upload does.
+    required: false
+    default: ""
+  working-directory:
+    description: Directory to run astl from.
+    required: false
+    default: "."
+  fail-on-findings:
+    description: >-
+      Fail the step on exit 2 (violations) or exit 3 (a file could not be
+      checked). Set to false when a later step must still run, and gate the job
+      on the exit-code output instead. Exit 1, astl itself failing, always fails
+      the step regardless of this setting.
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: >-
+      astl's exit code: 0 clean, 1 usage or runtime error, 2 violations found,
+      3 the run could not check every file it was given.
+    value: ${{ steps.astl.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install astl
+      shell: bash
+      env:
+        ASTL_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          *) echo "::error::this action runs on Linux and macOS runners, got $RUNNER_OS" >&2; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::no astl build for runner architecture $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+
+        repo=arhuman/ansible-static-lint
+        if [ "$ASTL_VERSION" = latest ]; then
+          # Resolved through the releases/latest redirect rather than the REST
+          # API, so the action does not spend the job's unauthenticated rate
+          # limit on a lookup that a plain HTTP redirect answers.
+          tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+                  "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')
+          [ -n "$tag" ] || { echo "::error::could not resolve the latest astl release" >&2; exit 1; }
+        else
+          tag="v${ASTL_VERSION#v}"
+        fi
+        version="${tag#v}"
+
+        archive="ansible-static-lint_${version}_${os}_${arch}.tar.gz"
+        base="https://github.com/$repo/releases/download/$tag"
+        dir="$RUNNER_TEMP/astl"
+        mkdir -p "$dir"
+
+        curl -fsSL "$base/$archive" -o "$dir/$archive"
+        curl -fsSL "$base/checksums.txt" -o "$dir/checksums.txt"
+
+        # This catches a truncated or corrupted download. It is not a
+        # supply-chain guarantee: checksums.txt travels from the same release as
+        # the archive, so a tampered release would carry a matching sum. For
+        # that, verify checksums.txt.sig against its certificate with cosign;
+        # README.md has the command.
+        if command -v sha256sum >/dev/null 2>&1; then sum=(sha256sum); else sum=(shasum -a 256); fi
+        (cd "$dir" && grep " ${archive}\$" checksums.txt | "${sum[@]}" -c -)
+
+        tar -xzf "$dir/$archive" -C "$dir" astl
+        chmod +x "$dir/astl"
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/astl" -version
+
+    - name: Run astl
+      id: astl
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ASTL_PATHS: ${{ inputs.paths }}
+        ASTL_FORMAT: ${{ inputs.format }}
+        ASTL_IDS: ${{ inputs.ids }}
+        ASTL_CONFIG: ${{ inputs.config }}
+        ASTL_OUTPUT: ${{ inputs.output }}
+        ASTL_FAIL: ${{ inputs.fail-on-findings }}
+      run: |
+        # No `set -e`: the exit code is the payload here, not a failure to abort
+        # on. It is captured, published as an output, and only then acted on.
+        set -uo pipefail
+
+        args=(-f "$ASTL_FORMAT" --ids "$ASTL_IDS")
+        if [ -n "$ASTL_CONFIG" ]; then args+=(-c "$ASTL_CONFIG"); fi
+        # Word splitting is the documented contract: paths is space separated.
+        read -r -a paths <<< "$ASTL_PATHS"
+
+        if [ -n "$ASTL_OUTPUT" ]; then
+          astl "${args[@]}" "${paths[@]}" > "$ASTL_OUTPUT"
+        else
+          astl "${args[@]}" "${paths[@]}"
+        fi
+        code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+        # astl failing to run is not a finding, and no input suppresses it.
+        if [ "$code" -eq 1 ]; then exit 1; fi
+        if [ "$ASTL_FAIL" = "true" ]; then exit "$code"; fi
+        exit 0

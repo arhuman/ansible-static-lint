@@ -1,0 +1,7 @@
+# Review routing. Every path falls to the maintainer unless listed otherwise.
+* @arhuman
+
+# The identifier equivalence table and the output formatters are the two places
+# where a careless change silently breaks ansible-lint output compatibility.
+/internal/rules/ids.go @arhuman
+/internal/format/ @arhuman

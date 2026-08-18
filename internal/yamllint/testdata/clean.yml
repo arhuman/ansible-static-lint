@@ -1,0 +1,17 @@
+---
+plain: value
+sq: 'x'
+dq: "y"
+lit: |
+  text
+fold: >
+  text
+key: {flow: [a, b], m: {n: 1}}
+good: true
+also: false
+
+---
+a: 1
+b:
+  - 1
+  - c: 2

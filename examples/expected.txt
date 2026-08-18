@@ -1,0 +1,7 @@
+examples/playbook.yml:4:3: name[play][/]: All plays should be named.
+examples/playbook.yml:6: command-instead-of-shell: Use shell only when shell functionality is required.
+examples/playbook.yml:6: name[missing][/]: All tasks should be named.
+examples/playbook.yml:6: no-changed-when: Commands should not change things if nothing needs doing.
+examples/playbook.yml:7:13: name[casing][/]: All names should start with an uppercase letter.
+examples/playbook.yml:7: package-latest: Package installs should not use latest.
+examples/playbook.yml:11: risky-file-permissions: File permissions unset or incorrect.

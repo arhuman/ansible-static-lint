@@ -1,0 +1,15 @@
+---
+rules:
+  braces:
+    max-spaces-inside: 2
+  colons:
+    max-spaces-after: -1
+  comments:
+    require-starting-space: false
+  indentation:
+    spaces: 4
+    indent-sequences: consistent
+  truthy:
+    allowed-values: ["yes", "no", "true", "false"]
+    check-keys: false
+  document-start: enable

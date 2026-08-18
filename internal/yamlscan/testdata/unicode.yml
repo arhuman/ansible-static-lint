@@ -1,0 +1,9 @@
+# leading comment
+
+key:
+  - one
+  -  two
+
+umlaut_ä: "ä ç 東京"
+empty_val:
+single: 'it''s'

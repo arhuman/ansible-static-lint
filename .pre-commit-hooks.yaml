@@ -1,0 +1,24 @@
+# pre-commit hook definitions for astl. Consumers add this to their own
+# .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/arhuman/ansible-static-lint
+#       rev: v0.1.0
+#       hooks:
+#         - id: astl
+#
+# `language: golang` builds astl from this repository at the pinned rev, so the
+# only prerequisite is a Go toolchain. README.md documents the `repo: local`
+# variant for an already-installed binary, which needs no toolchain at all.
+- id: astl
+  name: astl
+  description: Static Ansible linting, no Ansible runtime required.
+  entry: astl .
+  language: golang
+  # The hook fires when a YAML file is staged but lints the whole tree rather
+  # than the staged paths: discovery decides a file's kind from its path and
+  # follows include_tasks from the files it is given, so a narrowed file list
+  # changes what is reported. At tens of milliseconds there is nothing to gain
+  # by narrowing it.
+  types: [yaml]
+  pass_filenames: false

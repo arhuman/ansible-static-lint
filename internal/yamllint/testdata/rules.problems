@@ -1,0 +1,21 @@
+3:8 anchors found undeclared alias "undeclared"
+5:1 key-duplicates duplication of key "dup" in mapping
+6:11 braces too many spaces inside braces
+7:12 brackets too many spaces inside brackets
+7:15 commas too few spaces after comma
+7:18 commas too many spaces after comma
+7:20 brackets too many spaces inside brackets
+8:6 colons too many spaces before colon
+9:11 commas too many spaces before comma
+10:2 comments missing starting space in comment
+13:5 hyphens too many spaces after hyphen
+17:1 empty-lines too many blank lines (3 > 2)
+18:8 truthy truthy value should be one of [false, true]
+19:12 octal-values forbidden implicit octal value "0777"
+20:16 octal-values forbidden explicit octal value "0o777"
+21:14 trailing-spaces trailing spaces
+23:4 indentation wrong indentation: expected 2 but found 3
+24:14 colons too many spaces after colon
+26:3 truthy truthy value should be one of [false, true]
+27:161 line-length line too long (166 > 160 characters)
+28:16 new-line-at-end-of-file no new line character at the end of file

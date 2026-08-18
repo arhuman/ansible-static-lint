@@ -1,0 +1,8 @@
+StreamStart s=0:0:0 e=0:0:0 style= value=""
+BlockMappingStart s=0:0:0 e=0:0:0 style= value=""
+Key s=0:0:0 e=0:0:0 style= value=""
+Scalar s=0:0:0 e=0:16:16 style=plain value="no_final_newline"
+Value s=0:16:16 e=0:17:17 style= value=""
+Scalar s=0:18:18 e=0:22:22 style=plain value="true"
+BlockEnd s=0:22:22 e=0:22:22 style= value=""
+StreamEnd s=0:22:22 e=0:22:22 style= value=""

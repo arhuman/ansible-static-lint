@@ -1,0 +1,82 @@
+version: "2"
+
+# Quality gate for ansible-static-lint. Mirrors the 10x-review thresholds so `make audit` and a
+# review measure the same things.
+#
+# RATCHET DISCIPLINE: the complexity gates below start at a baseline this repo
+# passes today and are lowered one rung at a time as offenders are refactored.
+# NEVER raise a gate to green a red build. The current worst offender is recorded
+# next to each gate so the next paydown is obvious.
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - dupl
+    - funlen
+    - gocognit
+    - gocyclo
+    - gosec
+    - govet
+    - nestif
+    - noctx
+    - revive
+    - sqlclosecheck
+    - staticcheck
+  settings:
+    dupl:
+      threshold: 50
+    funlen:
+      lines: 80
+      statements: -1
+    gocognit:
+      # Target 16. Worst offender: galaxyRules (internal/rules/meta.go) at 24,
+      # then taskSkipRanges 21, metaVideoLinks 19.
+      min-complexity: 25
+    gocyclo:
+      # Target 11. Worst offender: galaxyRules (internal/rules/meta.go) at 20,
+      # then pyRepr 13, then splitArgs / resolveAction / newTask at 11.
+      min-complexity: 21
+    nestif:
+      min-complexity: 4
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+        - "-U1000"
+  exclusions:
+    # internal/yamlscan is the scanner vendored from gopkg.in/yaml.v3 (see its
+    # NOTICE): upstream style is preserved verbatim so future diffs against the
+    # origin stay readable, so it is not held to this repo's gates.
+    paths:
+      - internal/yamlscan
+    rules:
+      - linters:
+          - errcheck
+        text: "Error return value of .*\\.Close` is not checked"
+      # Reading a caller-named path is what a linter does. G304 fires on every
+      # file astl is asked to lint, so it flags the tool's purpose rather than a
+      # defect.
+      #
+      # The exemption is deliberately narrow: internal/safeio is the one place
+      # that opens a repository-chosen path, and it is what makes that read
+      # bounded. Do not widen this list to a package that opens files directly,
+      # because bypassing safeio is precisely the defect gosec is pointing at.
+      - linters:
+          - gosec
+        text: "G304: Potential file inclusion via variable"
+        path: internal/safeio/
+      # Same reasoning for the yamllint configuration search: the paths come
+      # from the operator's own working directory and environment, and reading
+      # what they point at is the feature. See internal/yamllint/load.go.
+      - linters:
+          - gosec
+        text: "G703: Path traversal via taint analysis"
+        path: internal/yamllint/
+      # Test fixtures need traversable directories and, for the unreadable-path
+      # tests, deliberately odd modes. Neither ships in the binary.
+      - path: _test\.go
+        linters:
+          - dupl
+          - funlen
+          - gosec

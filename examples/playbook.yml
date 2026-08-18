@@ -1,0 +1,14 @@
+# Deliberately broken, and the input to `make check`. Every finding it produces
+# is intentional and pinned in expected.txt, so a build that runs but reports
+# the wrong thing fails the smoke test instead of looking healthy.
+- hosts: all
+  tasks:
+    - shell: rm -rf /tmp/build
+    - name: install nginx
+      package:
+        name: nginx
+        state: latest
+    - name: Write the config
+      copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf

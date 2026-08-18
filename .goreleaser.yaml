@@ -1,0 +1,73 @@
+version: 2
+
+project_name: ansible-static-lint
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: astl
+    main: ./cmd/astl
+    binary: astl
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # Keep the -X package path equal to the Makefile's VERSION_PKG.
+      - -s -w
+      - -X main.Version={{ .Version }}
+      - -X main.GitCommit={{ .ShortCommit }}
+      - -X main.BuildDate={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+# Both need a tool on PATH in CI: syft (SBOM) and cosign (signing). See
+# .github/workflows/release.yml; without those installer steps goreleaser fails
+# with "syft/cosign: executable file not found".
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+      - --yes
+    artifacts: checksum
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  draft: false
+  prerelease: auto
