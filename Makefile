@@ -55,7 +55,7 @@ LDFLAGS := -s -w \
 	-X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'
 
 .DEFAULT_GOAL := help
-.PHONY: audit bench build check ci clean cover fuzz help parity release test tidy tools
+.PHONY: audit bench build check ci clean cover fuzz help parity perfguard release test tidy tools
 
 ## audit: run quality control checks (mod verify, lint, vuln scan, coverage gate)
 audit: cover
@@ -65,12 +65,20 @@ audit: cover
 	golangci-lint run $(PKG)
 	govulncheck $(PKG)
 
-## bench: speed regression guard, corpus must lint under 150 ms
-# The guard lives in the compatibility repo beside the corpus it measures;
-# this target only delegates, like parity. Override the budget there with
-# BENCH_BUDGET_MS.
-bench:
+## bench: speed regression guards, corpus under 150 ms plus the noqa shape guard
+# The corpus guard lives in the compatibility repo beside the corpus it
+# measures; this target only delegates for it, like parity. Override the budget
+# there with BENCH_BUDGET_MS.
+bench: perfguard
 	$(call in_parity_repo,bench,bench)
+
+## perfguard: assert noqa resolution is still linear in the suppression count
+# Tagged out of the ordinary suite because it reads wall-clock time: run inside
+# `make cover`, one noisy CI runner failed the coverage gate and the linters
+# with it. It belongs with the other timing guard, not in front of the audit.
+# It needs no compatibility repo, so it runs before the delegation above.
+perfguard:
+	go test -tags perfguard -count=1 -run TestNoqaResolutionStaysLinear ./internal/rules
 
 ## build: compile the astl binary into bin/ with version metadata
 build:

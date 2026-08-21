@@ -1,13 +1,28 @@
-//go:build !race
+//go:build perfguard && !race
 
-// Excluded from race builds on purpose. The race detector adds a large constant
-// cost to every memory access, which inflates the linear part of this
-// measurement far more than the quadratic part and squeezes the two outcomes
-// together: the regression this guards against measured 8.2x without the
-// detector and only 5.8x with it, close enough to the linear 4.0x that no
-// threshold separates them safely. It would also be the slowest test in the
-// suite there. `make test` runs with -race and skips it; `make audit` runs
-// `make cover` without -race, so CI still executes it on every push.
+// Behind the `perfguard` tag, and out of race builds, for two separate reasons.
+//
+// Out of race builds because the detector adds a large constant cost to every
+// memory access, which inflates the linear part of this measurement far more
+// than the quadratic part and squeezes the two outcomes together: the
+// regression this guards against measured 8.2x without the detector and only
+// 5.8x with it, close enough to the linear 4.0x that no threshold separates
+// them safely. It would also be the slowest test in the suite there.
+//
+// Behind a tag because it reads wall-clock time, and it used to run inside
+// `make cover`, which `make audit` depends on. A shared CI runner measured
+// 6.34x on code that measures 3.88x to 4.19x on a quiet machine, so one noisy
+// neighbour failed the coverage gate and took the linters and the vulnerability
+// scan down with it, none of which it has anything to do with. `make bench`
+// runs it now: the timing guards sit together, and a flake costs only the
+// guard that flaked.
+//
+// Improvement lead: the property under test is algorithmic, an indexed lookup
+// against a rescan, and time is only a proxy for it. Counting the noqa entries
+// SkipsInRange examines would assert the same shape with no timing noise at
+// all, and could then go back into the ordinary suite and into race builds.
+// That needs a counter a test can read without costing production anything,
+// which is the part that was not worth improvising here.
 
 package rules_test
 
