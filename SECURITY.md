@@ -2,13 +2,15 @@
 
 ## Supported versions
 
-ansible-static-lint has not cut a release yet. Until it does, only `main`
-receives fixes.
+ansible-static-lint is on a 0.x line, so only the newest release is supported.
+A fix ships as the next patch or minor rather than being backported: on 0.x
+there is no branch old enough to be worth maintaining separately.
 
 | Version | Supported |
 | ------- | --------- |
-| `main` | yes |
-| pre-release tags, once they exist | latest tag only |
+| newest `0.x` release | yes |
+| earlier `0.x` releases | no, upgrade to the newest |
+| `main` | yes, but unreleased by definition |
 
 ## Reporting a vulnerability
 
