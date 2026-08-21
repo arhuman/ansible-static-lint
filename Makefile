@@ -39,7 +39,7 @@ define in_parity_repo
 endef
 
 # Pinned tool versions. Keep equal to the 10x _shared/references/versions.md table.
-GOLANGCI_VERSION    ?= v2.12.2
+GOLANGCI_VERSION    ?= v2.13.1
 GOVULNCHECK_VERSION ?= v1.1.4
 
 # Version metadata injected via ldflags. VERSION_PKG declares Version, GitCommit
