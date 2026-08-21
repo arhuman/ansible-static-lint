@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-21
+
 Initial public release. This section lists what astl ships, not the history of
 how it got there.
 
