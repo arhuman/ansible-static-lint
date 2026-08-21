@@ -40,7 +40,7 @@ endef
 
 # Pinned tool versions. Keep equal to the 10x _shared/references/versions.md table.
 GOLANGCI_VERSION    ?= v2.13.1
-GOVULNCHECK_VERSION ?= v1.1.4
+GOVULNCHECK_VERSION ?= v1.7.0
 
 # Version metadata injected via ldflags. VERSION_PKG declares Version, GitCommit
 # and BuildDate; for a single-binary CLI that is package main itself.
