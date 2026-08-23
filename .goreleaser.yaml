@@ -17,7 +17,11 @@ builds:
     ldflags:
       # Keep the -X package path equal to the Makefile's VERSION_PKG.
       - -s -w
-      - -X main.Version={{ .Version }}
+      # .Version drops the tag's leading v, which the other two build paths
+      # keep: `git describe` stamps v0.1.0, and so does the module version a
+      # `go install` reads back out of the build info. Put it back so all three
+      # report the same string. Archive names below stay unprefixed.
+      - -X main.Version=v{{ .Version }}
       - -X main.GitCommit={{ .ShortCommit }}
       - -X main.BuildDate={{ .Date }}
     goos:
