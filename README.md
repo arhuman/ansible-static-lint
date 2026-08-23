@@ -251,11 +251,14 @@ release; the signature is what ties it to this repository's release workflow:
 
 ```sh
 cosign verify-blob checksums.txt \
-  --signature checksums.txt.sig \
-  --certificate checksums.txt.pem \
+  --bundle checksums.txt.sigstore.json \
   --certificate-identity-regexp '^https://github.com/arhuman/ansible-static-lint/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+The bundle carries the signature and the certificate together. Releases up to
+v0.1.0 shipped them as separate `checksums.txt.sig` and `checksums.txt.pem`
+files; verify those with `--signature` and `--certificate` instead.
 
 ## Early feedback wanted
 

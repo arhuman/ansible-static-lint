@@ -50,14 +50,17 @@ checksum:
 sboms:
   - artifacts: archive
 
+# One Sigstore bundle, not a .sig plus a .pem: cosign 3 (what cosign-installer
+# v4 puts on PATH) writes the new bundle format by default, ignores
+# --output-signature/--output-certificate, and then fails on the empty --bundle
+# path it was never given ("create bundle file: open : no such file or
+# directory"). The bundle carries both the signature and the certificate.
 signs:
   - cmd: cosign
-    signature: "${artifact}.sig"
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
-      - --output-signature=${signature}
-      - --output-certificate=${certificate}
+      - --bundle=${signature}
       - ${artifact}
       - --yes
     artifacts: checksum
