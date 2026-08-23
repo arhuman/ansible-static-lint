@@ -26,15 +26,6 @@ import (
 	"github.com/arhuman/ansible-static-lint/internal/yamllint"
 )
 
-// Build metadata, overridden at link time via -ldflags -X (see the Makefile's
-// VERSION_PKG). They stay exported because the linker can only set package-level
-// variables by their qualified name, and goreleaser stamps the same three.
-var (
-	Version   = "dev"
-	GitCommit = "unknown"
-	BuildDate = "unknown"
-)
-
 // Exit codes: clean run, usage or runtime failure, violations found, and a run
 // that could not check everything it was given. The last is separate from
 // exitViolations because the two say different things: violations are a result,
@@ -143,7 +134,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if *showVersion {
-		fmt.Fprintf(stdout, "astl %s (%s, %s)\n", Version, GitCommit, BuildDate)
+		fmt.Fprintf(stdout, "astl %s\n", build)
 		return exitClean
 	}
 	if *formatLong != "" {
@@ -233,7 +224,7 @@ func emit(w io.Writer, findings []rules.Finding, formatName, idsName string) err
 	case "pep8":
 		err = format.PEP8(bw, findings, style)
 	case "sarif":
-		err = format.SARIF(bw, findings, Version, style)
+		err = format.SARIF(bw, findings, build.version, style)
 	default:
 		return fmt.Errorf("unknown format %q", formatName)
 	}
