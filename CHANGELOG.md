@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-23
+
 ## [0.1.1] - 2026-08-23
 
 ## [0.1.0] - 2026-08-21
