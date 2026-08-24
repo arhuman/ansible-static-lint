@@ -7,10 +7,12 @@
 #       hooks:
 #         - id: astl
 #
-# `language: golang` builds astl from this repository at the pinned rev, so the
-# only prerequisite is a Go toolchain. docs/ci.md documents the `repo: local`
-# variant for an already-installed binary, which needs no toolchain at all.
+# `language: golang` builds astl from this repository at the pinned rev.
+# pre-commit 3.0+ bootstraps the Go toolchain itself when it is absent, so
+# there is no prerequisite at all; docs/ci.md documents the `repo: local`
+# variant for an already-installed binary.
 - id: astl
+  minimum_pre_commit_version: 3.0.0
   name: astl
   description: Static Ansible linting, no Ansible runtime required.
   entry: astl .
