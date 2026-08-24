@@ -8,6 +8,25 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Added - 2026-08-24
+
+- Documented installing a release binary directly, which needs neither Go nor
+  Python. It was previously reachable only through the releases page.
+
+### Changed - 2026-08-24
+
+- README reordered around adoption: badges, a summary table and a "Try it on
+  your repository" section (release binary, GitHub Action, pre-commit) now come
+  first, and `make check` moved to a verification section near the end.
+- Reference material moved out of the README, unchanged, into `docs/ci.md`,
+  `docs/configuration.md`, `docs/exit-codes.md`, `docs/performance.md` and
+  `docs/supply-chain.md`.
+
+### Fixed - 2026-08-24
+
+- The copy-paste snippets for the GitHub Action and the pre-commit hook pinned
+  `v0.1.0` while the current release was `v0.2.0`.
+
 ## [0.2.0] - 2026-08-24
 
 ## [0.1.2] - 2026-08-23

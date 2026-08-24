@@ -3,12 +3,12 @@
 #
 #   repos:
 #     - repo: https://github.com/arhuman/ansible-static-lint
-#       rev: v0.1.0
+#       rev: v0.2.0
 #       hooks:
 #         - id: astl
 #
 # `language: golang` builds astl from this repository at the pinned rev, so the
-# only prerequisite is a Go toolchain. README.md documents the `repo: local`
+# only prerequisite is a Go toolchain. docs/ci.md documents the `repo: local`
 # variant for an already-installed binary, which needs no toolchain at all.
 - id: astl
   name: astl
