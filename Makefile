@@ -133,7 +133,8 @@ cover:
 FUZZTIME ?= 60s
 FUZZ_TARGETS = internal/rules:FuzzLintFile \
                internal/yamllint:FuzzLoadConfig \
-               internal/parse:FuzzNoqaIndex
+               internal/parse:FuzzNoqaIndex \
+               internal/ignore:FuzzParse
 fuzz:
 	@for t in $(FUZZ_TARGETS); do \
 		pkg=$${t%%:*}; fn=$${t##*:}; \

@@ -31,8 +31,15 @@ type Finding struct {
 	NativeMessage string
 	// Warning marks a finding ansible-lint reports at warning level rather than
 	// error level, which its pep8 output flags with a trailing `(warning)`.
-	// Only rules upstream tags `experimental` are warnings here.
+	// Rules upstream tags `experimental` are warnings here, and so is anything
+	// the ignore file marked.
 	Warning bool
+	// Ignored marks a finding an `.ansible-lint-ignore` entry named without the
+	// `skip` qualifier. Such a finding is still reported, and reported first:
+	// upstream prints the ignored ones as a block ahead of the rest. It is a
+	// separate field from Warning because a rule demoted by warn_list is also a
+	// warning yet belongs in the second block, so one flag cannot carry both.
+	Ignored bool
 	// lineScoped marks findings whose upstream path filters suppressions on
 	// the finding's own line only (var-naming's play and vars-file passes):
 	// the task and metadata skip scopes must not touch them.

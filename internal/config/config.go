@@ -37,6 +37,12 @@ type Config struct {
 	// like upstream's option of the same name. It is interpolated into the
 	// var-naming[pattern] message.
 	VarNamingPattern string `yaml:"var_naming_pattern"`
+	// IgnoreFile names the `.ansible-lint-ignore` to read instead of searching
+	// for one, as `-i` does. Upstream documents only the flag; the key reaches
+	// its config object through a catch-all rather than a declared option, and
+	// there the file overrides the flag. astl declares it and lets the flag
+	// win, which is the precedence every other option here already has.
+	IgnoreFile string `yaml:"ignore_file"`
 }
 
 // Filenames are the config files ansible-lint looks for, in its own order

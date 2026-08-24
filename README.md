@@ -360,6 +360,32 @@ Inline `# noqa: <rule>` comments and `tags: [skip_ansible_lint]` are honoured.
 ansible-lint identifiers such as `102` or `unnamed-task`, and the forms can be
 mixed freely in the same file.
 
+### Ignoring rules for whole files
+
+`.ansible-lint-ignore` is read from the working directory, then
+`.config/ansible-lint-ignore.txt`; the first one found wins. `-i` /
+`--ignore-file` names one directly, and the `ignore_file` config key does the
+same with the flag taking precedence. One entry per line, `<path> <rule>`, `#`
+starting a comment:
+
+```
+playbooks/legacy.yml risky-file-permissions
+playbooks/legacy.yml package-latest skip
+```
+
+The two forms differ, and the difference is the point of the file. A bare entry
+**keeps reporting** the finding, at warning level and ahead of every other
+finding, but stops it failing the run. Add `skip` and the finding disappears
+entirely. So a repository can adopt astl on a red tree, keep what it owes in
+view, and still get a green build.
+
+Matching is exact on both columns: the path is compared verbatim, so `./x.yml`
+matches nothing, and `yaml` does not cover `yaml[indentation]`. The rule column
+accepts either identifier taxonomy, as `# noqa` does. astl reproduces
+ansible-lint's parser here down to its quirks, which
+[docs/adr/0006-ignore-file-semantics.md](docs/adr/0006-ignore-file-semantics.md)
+lists.
+
 ## Rules
 
 38 static rules are supported; the full equivalence table between astl's

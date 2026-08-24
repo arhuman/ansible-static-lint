@@ -36,21 +36,43 @@ func Tag(tag string, style rules.IDStyle) string {
 
 // PEP8 writes findings in `path:line[:column]: tag: message` form. The style
 // selects both taxonomies at once: identifiers and message wording.
+//
+// Findings the ignore file marked print first, as a block, ahead of every other
+// finding. That is ansible-lint's own ordering rather than a preference: it
+// partitions its matches into ignored and fatal and prints the two in that
+// order, each keeping the sort. Both blocks are already sorted here, so a
+// stable pass over each reproduces it.
 func PEP8(w io.Writer, findings []rules.Finding, style rules.IDStyle) error {
 	for _, f := range findings {
-		pos := fmt.Sprintf("%d", f.Line)
-		if f.Column > 0 {
-			pos = fmt.Sprintf("%d:%d", f.Line, f.Column)
+		if !f.Ignored {
+			continue
 		}
-		level := ""
-		if f.Warning {
-			level = " (warning)"
+		if err := writePEP8(w, f, style); err != nil {
+			return err
 		}
-		if _, err := fmt.Fprintf(w, "%s:%s: %s: %s%s\n", sanitize(f.Path), pos, Tag(f.Tag, style), sanitize(f.MessageFor(style)), level); err != nil {
+	}
+	for _, f := range findings {
+		if f.Ignored {
+			continue
+		}
+		if err := writePEP8(w, f, style); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writePEP8(w io.Writer, f rules.Finding, style rules.IDStyle) error {
+	pos := fmt.Sprintf("%d", f.Line)
+	if f.Column > 0 {
+		pos = fmt.Sprintf("%d:%d", f.Line, f.Column)
+	}
+	level := ""
+	if f.Warning {
+		level = " (warning)"
+	}
+	_, err := fmt.Fprintf(w, "%s:%s: %s: %s%s\n", sanitize(f.Path), pos, Tag(f.Tag, style), sanitize(f.MessageFor(style)), level)
+	return err
 }
 
 // sanitize drops the control characters that would let text taken from the

@@ -67,6 +67,7 @@ loop_var_prefix: "^(__|{role}_)"
 max_tasks: 42
 max_block_depth: 7
 var_naming_pattern: "^[a-z][a-z0-9_]*$"
+ignore_file: .config/ansible-lint-ignore.txt
 `
 
 func TestLoadReadsEverySetting(t *testing.T) {
@@ -92,6 +93,9 @@ func TestLoadReadsEverySetting(t *testing.T) {
 	}
 	if c.Profile != "production" {
 		t.Errorf("profile = %q", c.Profile)
+	}
+	if c.IgnoreFile != ".config/ansible-lint-ignore.txt" {
+		t.Errorf("ignore_file = %q", c.IgnoreFile)
 	}
 }
 

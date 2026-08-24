@@ -21,6 +21,7 @@ import (
 	"github.com/arhuman/ansible-static-lint/internal/config"
 	"github.com/arhuman/ansible-static-lint/internal/discover"
 	"github.com/arhuman/ansible-static-lint/internal/format"
+	"github.com/arhuman/ansible-static-lint/internal/ignore"
 	"github.com/arhuman/ansible-static-lint/internal/parse"
 	"github.com/arhuman/ansible-static-lint/internal/rules"
 	"github.com/arhuman/ansible-static-lint/internal/yamllint"
@@ -124,6 +125,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		idsName     = fs.String("ids", "upstream", "rule identifier taxonomy: upstream or native")
 		configPath  = fs.String("c", "", "configuration file to use instead of searching for one")
 		configLong  = fs.String("config", "", "configuration file to use instead of searching for one")
+		ignorePath  = fs.String("i", "", "ignore file to use instead of searching for one")
+		ignoreLong  = fs.String("ignore-file", "", "ignore file to use instead of searching for one")
 		showVersion = fs.Bool("version", false, "print version and exit")
 	)
 	fs.Usage = func() {
@@ -155,11 +158,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
+	if *ignoreLong != "" {
+		*ignorePath = *ignoreLong
+	}
+	if *ignorePath == "" {
+		*ignorePath = cfg.IgnoreFile
+	}
+	ignores, err := loadIgnores(*ignorePath, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, "astl:", err)
+		return exitError
+	}
+
 	findings, unchecked, err := lint(paths, cfg, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "astl:", err)
 		return exitError
 	}
+	// After the run rather than inside it: the ignore file names findings, not
+	// files, so nothing about it can be decided before they exist. Sorting and
+	// deduplication do not read either flag it sets, so applying it here is the
+	// same result as applying it upstream's way, mid-pipeline.
+	findings = ignores.Apply(findings)
 
 	if err := emit(stdout, findings, *formatName, *idsName); err != nil {
 		fmt.Fprintln(stderr, "astl:", err)
@@ -191,6 +211,24 @@ func loadConfig(path string) (config.Config, error) {
 		return config.Load(".")
 	}
 	return config.LoadFile(path)
+}
+
+// loadIgnores reads the `.ansible-lint-ignore` that applies, from the given
+// path or by searching the working directory for one.
+//
+// A named file that is not there is reported and the run continues, which is
+// the opposite of what `-c` does with a missing config. The asymmetry is
+// upstream's, and it is defensible: a config that failed to load would lint the
+// repository under the wrong policy without saying so, while a missing ignore
+// file can only make the run report findings the repository already knew about,
+// and those are on stdout for anyone to see.
+func loadIgnores(path string, warn io.Writer) (ignore.Rules, error) {
+	r, err := ignore.Load(".", path)
+	if errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(warn, "astl: ignore file not found %q\n", path)
+		return ignore.Rules{}, nil
+	}
+	return r, err
 }
 
 // failures counts the findings that make a run fail, which is every finding

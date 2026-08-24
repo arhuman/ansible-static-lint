@@ -563,3 +563,149 @@ func TestUnknownProfileWarnsAndRunsEverything(t *testing.T) {
 		t.Errorf("got exit %d, want %d", code, exitViolations)
 	}
 }
+
+// ignoreRepo writes a playbook and an `.ansible-lint-ignore` into a directory
+// the test owns, then makes it the working directory: the ignore file is
+// resolved from there and nowhere else, so a stray one on the developer's
+// machine cannot reach the run.
+func ignoreRepo(t *testing.T, playbook, ignore string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "site-playbook.yml"), []byte(playbook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ansible-lint-ignore"), []byte(ignore), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	return "site-playbook.yml"
+}
+
+// TestIgnoreFileSkipRemovesTheFinding is the reported case: an entry qualified
+// `skip` must silence the finding completely, not merely demote it.
+func TestIgnoreFileSkipRemovesTheFinding(t *testing.T) {
+	path := ignoreRepo(t, dirtyPlaybook, "site-playbook.yml name[missing] skip\n")
+
+	code, stdout, _ := runCLI(t, path)
+	if strings.Contains(stdout, "name[missing]") {
+		t.Errorf("stdout = %q, want no trace of the skipped rule", stdout)
+	}
+	if !strings.Contains(stdout, "name[play][/]") {
+		t.Errorf("stdout = %q, want the rule that was not skipped", stdout)
+	}
+	if code != exitViolations {
+		t.Errorf("got exit %d, want %d", code, exitViolations)
+	}
+}
+
+// TestIgnoreFileBareEntryReportsAsAnIgnoredWarning pins the half that surprises:
+// an entry without `skip` does not hide anything. The finding still prints, at
+// warning level and ahead of the rest, and only stops failing the run.
+//
+// These bytes are not derived from reading upstream's source. They were taken
+// from ansible-lint 26.8.0 run on the same fixture from the same directory: the
+// ordering, the ` (warning)` suffix and the exit code all matched exactly. The
+// corpus cannot cover this, because the harness lints from the repository root
+// where one ignore file would apply to every case at once.
+func TestIgnoreFileBareEntryReportsAsAnIgnoredWarning(t *testing.T) {
+	path := ignoreRepo(t, dirtyPlaybook, "site-playbook.yml name[missing]\n")
+
+	code, stdout, _ := runCLI(t, path)
+	want := "site-playbook.yml:4: name[missing][/]: All tasks should be named. (warning)\n" +
+		"site-playbook.yml:2:3: name[play][/]: All plays should be named.\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	if code != exitViolations {
+		t.Errorf("got exit %d, want %d", code, exitViolations)
+	}
+}
+
+// TestIgnoreFileOnlyIgnoredFindingsExitsClean: an ignored finding is not a
+// failure, which is what lets a repository adopt the linter before fixing
+// everything it reports.
+func TestIgnoreFileOnlyIgnoredFindingsExitsClean(t *testing.T) {
+	path := ignoreRepo(t, dirtyPlaybook, "site-playbook.yml name[missing]\nsite-playbook.yml name[play]\n")
+
+	code, stdout, _ := runCLI(t, path)
+	if !strings.Contains(stdout, "(warning)") {
+		t.Errorf("stdout = %q, want the findings still reported", stdout)
+	}
+	if code != exitClean {
+		t.Errorf("got exit %d, want %d", code, exitClean)
+	}
+}
+
+func TestIgnoreFileFromConfigKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "site-playbook.yml"), []byte(dirtyPlaybook), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "named.txt"), []byte("site-playbook.yml name[missing] skip\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ansible-lint"), []byte("ignore_file: named.txt\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	code, stdout, _ := runCLI(t, "site-playbook.yml")
+	if strings.Contains(stdout, "name[missing]") {
+		t.Errorf("stdout = %q, want the config key to select the ignore file", stdout)
+	}
+	if code != exitViolations {
+		t.Errorf("got exit %d, want %d", code, exitViolations)
+	}
+}
+
+// TestIgnoreFileFlagWinsOverConfigKey: `-i` is the operator's decision made on
+// the spot, so it outranks the file's own.
+func TestIgnoreFileFlagWinsOverConfigKey(t *testing.T) {
+	path := ignoreRepo(t, dirtyPlaybook, "site-playbook.yml name[missing] skip\n")
+	if err := os.WriteFile(".ansible-lint", []byte("ignore_file: .ansible-lint-ignore\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("flagged.txt", []byte("site-playbook.yml name[play] skip\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{{"-i", "flagged.txt", path}, {"--ignore-file", "flagged.txt", path}} {
+		_, stdout, _ := runCLI(t, args...)
+		if strings.Contains(stdout, "name[play]") {
+			t.Errorf("%v: stdout = %q, want the flag's file to apply", args, stdout)
+		}
+		if !strings.Contains(stdout, "name[missing]") {
+			t.Errorf("%v: stdout = %q, want the config key's file ignored", args, stdout)
+		}
+	}
+}
+
+// TestIgnoreFileMissingNamedFileWarnsAndContinues: upstream reports it and
+// carries on. Unlike a missing config, this cannot lint under the wrong policy;
+// it can only report findings the repository already knew about.
+func TestIgnoreFileMissingNamedFileWarnsAndContinues(t *testing.T) {
+	path := fixture(t, dirtyPlaybook)
+
+	code, stdout, stderr := runCLI(t, "-i", "no-such-file.txt", path)
+	if !strings.Contains(stderr, "ignore file not found") {
+		t.Errorf("stderr = %q, want a warning naming the missing file", stderr)
+	}
+	if !strings.Contains(stdout, "name[missing][/]") {
+		t.Errorf("stdout = %q, want the run to have continued", stdout)
+	}
+	if code != exitViolations {
+		t.Errorf("got exit %d, want %d", code, exitViolations)
+	}
+}
+
+func TestIgnoreFileUnreadableLineExitsError(t *testing.T) {
+	path := ignoreRepo(t, dirtyPlaybook, "site-playbook.yml\n")
+
+	code, _, stderr := runCLI(t, path)
+	if !strings.Contains(stderr, "no rule id after the path") {
+		t.Errorf("stderr = %q, want the parse failure explained", stderr)
+	}
+	if code != exitError {
+		t.Errorf("got exit %d, want %d", code, exitError)
+	}
+}
