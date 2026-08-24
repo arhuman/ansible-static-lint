@@ -50,8 +50,11 @@ the binary for you:
       - uses: arhuman/ansible-static-lint@v0.2.0
 ```
 
-**As a pre-commit hook.** Needs a Go toolchain, since it builds from the pinned
-revision:
+**As a pre-commit hook.** pre-commit installs astl in an isolated environment
+and caches it. With pre-commit 3.0 or newer, neither astl nor Go needs to be
+installed beforehand: `language: golang` bootstraps the toolchain itself. The
+first run downloads Go and compiles astl once; every run after that uses the
+cached binary.
 
 ```yaml
 repos:
@@ -166,7 +169,7 @@ upload to GitHub code scanning, and the pre-commit variants.
 
 ```sh
 astl path/to/playbooks     # pep8 lines on stdout
-astl -f sarif .            # SARIF 2.1.0 instead
+astl -f sarif .            # SARIF 2.1.0 instead, see docs/sarif.md
 astl -c ci.ansible-lint .  # lint against a named config
 ```
 
@@ -200,7 +203,10 @@ both taxonomies are derived from.
 
 `--ids native` switches output to the native vocabulary: both the rule
 identifier and the message wording, in pep8 and SARIF alike. The default is
-`--ids upstream`, which keeps output byte for byte identical to ansible-lint's.
+`--ids upstream`, which keeps the pep8 output byte for byte identical to
+ansible-lint's. The SARIF document is not held to that comparison and does not
+try to match upstream's own SARIF, for the reasons in
+[ADR 0007](docs/adr/0007-sarif-outside-the-compatibility-contract.md).
 
 ```
 # default, ansible-lint's identifier and wording

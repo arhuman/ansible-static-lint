@@ -54,7 +54,10 @@ regardless of `fail-on-findings`. Full taxonomy in
 
 ## Uploading to GitHub code scanning
 
-`-f sarif` emits SARIF 2.1.0, which is what code scanning consumes. One thing
+`-f sarif` emits SARIF 2.1.0, which is what code scanning consumes. The
+document also declares which rules astl implements and which it deliberately
+does not, so a dashboard can tell a rule that found nothing from a rule that
+never ran; [sarif.md](sarif.md) is the contract. One thing
 to get right: astl still exits 2 when it finds something, so in the obvious job
 the lint step fails, the upload step never runs, and code scanning stays empty
 while the log looks like an ordinary lint failure. Let the upload run, then

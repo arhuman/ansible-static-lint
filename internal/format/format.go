@@ -150,75 +150,189 @@ func sanitize(s string) string {
 	}, s)
 }
 
-// SARIF writes a minimal SARIF 2.1.0 document, naming rules and wording their
-// messages in the requested taxonomy.
-func SARIF(w io.Writer, findings []rules.Finding, version string, style rules.IDStyle) error {
-	type region struct {
-		StartLine   int `json:"startLine"`
-		StartColumn int `json:"startColumn,omitempty"`
-	}
-	type artifact struct {
-		URI string `json:"uri"`
-	}
-	type physical struct {
-		ArtifactLocation artifact `json:"artifactLocation"`
-		Region           region   `json:"region"`
-	}
-	type location struct {
-		PhysicalLocation physical `json:"physicalLocation"`
-	}
-	type message struct {
-		Text string `json:"text"`
-	}
-	type result struct {
-		RuleID    string     `json:"ruleId"`
-		Level     string     `json:"level"`
-		Message   message    `json:"message"`
-		Locations []location `json:"locations"`
-	}
-	type driver struct {
-		Name           string `json:"name"`
-		Version        string `json:"version"`
-		InformationURI string `json:"informationUri"`
-	}
-	type tool struct {
-		Driver driver `json:"driver"`
-	}
-	type run struct {
-		Tool    tool     `json:"tool"`
-		Results []result `json:"results"`
-	}
-	type doc struct {
-		Schema  string `json:"$schema"`
-		Version string `json:"version"`
-		Runs    []run  `json:"runs"`
-	}
+// upstreamRuleDoc prefixes ansible-lint's own page for a rule. Subtags have no
+// page, so a descriptor links its base rule. Every page the table can produce
+// was checked to resolve.
+const upstreamRuleDoc = "https://docs.ansible.com/projects/lint/rules/"
 
-	results := make([]result, 0, len(findings))
-	for _, f := range findings {
-		level := "error"
-		if f.Warning {
-			level = "warning"
-		}
-		results = append(results, result{
-			RuleID:  rules.TagFor(f.Tag, style),
-			Level:   level,
-			Message: message{Text: f.MessageFor(style)},
-			Locations: []location{{PhysicalLocation: physical{
-				ArtifactLocation: artifact{URI: f.Path},
-				Region:           region{StartLine: f.Line, StartColumn: f.Column},
-			}}},
-		})
-	}
-	out := doc{
+// SARIF writes a SARIF 2.1.0 document, naming rules and wording their messages
+// in the requested taxonomy. Beyond the findings it declares what astl is: the
+// driver lists every rule it can report, with both taxonomies and a link to
+// upstream's page, and a run-level `astl.scope` property names the rules it
+// deliberately does not implement. A consumer can therefore tell a rule that
+// found nothing from a rule that never ran, which is the difference between
+// astl's report and a full ansible-lint run.
+func SARIF(w io.Writer, findings []rules.Finding, version string, style rules.IDStyle) error {
+	descriptors, supported := sarifRules(style)
+	out := sarifDoc{
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
 		Version: "2.1.0",
-		Runs: []run{{
-			Tool:    tool{Driver: driver{Name: "astl", Version: version, InformationURI: "https://github.com/arhuman/ansible-static-lint"}},
-			Results: results,
+		Runs: []sarifRun{{
+			Tool: sarifTool{Driver: sarifDriver{
+				Name:           "astl",
+				Version:        version,
+				InformationURI: "https://github.com/arhuman/ansible-static-lint",
+				Rules:          descriptors,
+			}},
+			ColumnKind: "unicodeCodePoints",
+			Results:    sarifResults(findings, style),
+			Properties: sarifRunProperties{Scope: sarifScope{
+				Note:       scopeNote,
+				Taxonomy:   string(rules.IDUpstream),
+				Supported:  supported,
+				OutOfScope: sarifOutOfScope(),
+			}},
 		}},
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+// scopeNote states, inside the report, what the report is not. A consumer that
+// reads only the results cannot infer it, and the whole point of the block is
+// that silence about a rule is not a verdict on it.
+const scopeNote = "astl reports only the ansible-lint rules decidable from YAML source alone. " +
+	"A rule listed under outOfScope is never evaluated, so the absence of a finding " +
+	"for it is not a pass. Run ansible-lint for those."
+
+type (
+	sarifRegion struct {
+		StartLine int `json:"startLine"`
+		// StartColumn is omitted rather than sent as 0 for the rules that
+		// report no column: upstream reports a line for them, and a fabricated
+		// column would place a marker the finding does not claim.
+		StartColumn int `json:"startColumn,omitempty"`
+	}
+	sarifArtifact struct {
+		URI string `json:"uri"`
+	}
+	sarifPhysical struct {
+		ArtifactLocation sarifArtifact `json:"artifactLocation"`
+		Region           sarifRegion   `json:"region"`
+	}
+	sarifLocation struct {
+		PhysicalLocation sarifPhysical `json:"physicalLocation"`
+	}
+	sarifMessage struct {
+		Text string `json:"text"`
+	}
+	sarifResult struct {
+		RuleID    string          `json:"ruleId"`
+		Level     string          `json:"level"`
+		Message   sarifMessage    `json:"message"`
+		Locations []sarifLocation `json:"locations"`
+	}
+	sarifDescriptor struct {
+		ID               string            `json:"id"`
+		Name             string            `json:"name"`
+		ShortDescription sarifMessage      `json:"shortDescription"`
+		HelpURI          string            `json:"helpUri"`
+		Properties       map[string]string `json:"properties"`
+	}
+	sarifDriver struct {
+		Name           string            `json:"name"`
+		Version        string            `json:"version"`
+		InformationURI string            `json:"informationUri"`
+		Rules          []sarifDescriptor `json:"rules"`
+	}
+	sarifTool struct {
+		Driver sarifDriver `json:"driver"`
+	}
+	sarifUnsupported struct {
+		ID       string `json:"id"`
+		Requires string `json:"requires"`
+	}
+	sarifScope struct {
+		Note       string             `json:"note"`
+		Taxonomy   string             `json:"taxonomy"`
+		Supported  []string           `json:"supported"`
+		OutOfScope []sarifUnsupported `json:"outOfScope"`
+	}
+	sarifRunProperties struct {
+		Scope sarifScope `json:"astl.scope"`
+	}
+	sarifRun struct {
+		Tool sarifTool `json:"tool"`
+		// ColumnKind states what a column number counts. astl counts code
+		// points, which is what yaml.v3's scanner tracks; ansible-lint
+		// declares utf16CodeUnits while counting Python string indices, so
+		// its declaration is wrong outside the BMP and is not copied here
+		// (ADR 0007).
+		ColumnKind string             `json:"columnKind"`
+		Results    []sarifResult      `json:"results"`
+		Properties sarifRunProperties `json:"properties"`
+	}
+	sarifDoc struct {
+		Schema  string     `json:"$schema"`
+		Version string     `json:"version"`
+		Runs    []sarifRun `json:"runs"`
+	}
+)
+
+func sarifResults(findings []rules.Finding, style rules.IDStyle) []sarifResult {
+	out := make([]sarifResult, 0, len(findings))
+	for _, f := range findings {
+		level := "error"
+		if f.Warning {
+			level = "warning"
+		}
+		out = append(out, sarifResult{
+			RuleID:  rules.TagFor(f.Tag, style),
+			Level:   level,
+			Message: sarifMessage{Text: f.MessageFor(style)},
+			Locations: []sarifLocation{{PhysicalLocation: sarifPhysical{
+				ArtifactLocation: sarifArtifact{URI: f.Path},
+				Region:           sarifRegion{StartLine: f.Line, StartColumn: f.Column},
+			}}},
+		})
+	}
+	return out
+}
+
+// sarifRules renders one descriptor per reportable tag, and alongside it the
+// bare rule ids the scope block declares as supported. The two are built from
+// one walk so a rule cannot be described and left out of the scope, or the
+// reverse.
+func sarifRules(style rules.IDStyle) ([]sarifDescriptor, []string) {
+	all := rules.Descriptors(style)
+	descriptors := make([]sarifDescriptor, 0, len(all))
+	supported := make([]string, 0, len(rules.IDs))
+	for _, d := range all {
+		other := d.Native
+		if style == rules.IDNative {
+			other = d.Upstream
+		}
+		descriptors = append(descriptors, sarifDescriptor{
+			ID:               d.ID,
+			Name:             other,
+			ShortDescription: sarifMessage{Text: plainText(d.Description)},
+			HelpURI:          upstreamRuleDoc + d.Base + "/",
+			Properties:       map[string]string{"upstreamId": d.Upstream, "nativeId": d.Native},
+		})
+		if d.Upstream == d.Base {
+			supported = append(supported, d.Upstream)
+		}
+	}
+	return descriptors, supported
+}
+
+// plainText renders a rule description for a SARIF `text` field, which the
+// spec defines as plain text a viewer may show verbatim. The descriptions are
+// markdown source, shared with docs/rules.md, so their code spans would show
+// as literal backticks in a tooltip. Only the delimiters go: the content of a
+// span is the identifier being named and has to survive.
+func plainText(s string) string {
+	return strings.ReplaceAll(s, "`", "")
+}
+
+// sarifOutOfScope keeps upstream ids whatever the run's taxonomy: astl has no
+// native name for a rule it does not implement, and naming one list natively
+// and the other upstream would make the two incomparable.
+func sarifOutOfScope() []sarifUnsupported {
+	out := make([]sarifUnsupported, 0, len(rules.OutOfScope))
+	for _, r := range rules.OutOfScope {
+		out = append(out, sarifUnsupported{ID: r.ID, Requires: r.Requires})
+	}
+	return out
 }

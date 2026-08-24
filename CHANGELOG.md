@@ -8,6 +8,37 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Fixed - 2026-08-28 (issues 0010, 0011, 0012, found on kubernetes-sigs/kubespray)
+
+- A playbook whose first play is an `import_playbook` entry is now linted;
+  it was previously skipped whole, later plays and their includes with it.
+- A `roles/` subdirectory holding none of the five canonical role
+  subdirectories is no longer reported by `role-name`, matching upstream's
+  container-directory guard.
+- pep8 rendering now reproduces upstream's console renderer as a stack
+  machine instead of a subtag heuristic, so `[/]` artifacts land byte for
+  byte, including the trailing one a bracketed message leaves.
+
+### Added - 2026-08-24 (SARIF rule descriptors and scope)
+
+- `-f sarif` now declares `tool.driver.rules`: every rule tag astl can report,
+  with both identifier taxonomies, and a link to the rule's upstream page. A
+  `result.ruleId` always resolves to one of them, so a consumer can render a
+  rule name and a help link without shipping its own table.
+- The run carries an `astl.scope` property naming the 38 rules astl implements
+  and the 15 it does not, each with what reproducing it would require. This
+  lets a consumer tell a rule that found nothing from a rule that never ran.
+- Each descriptor carries `shortDescription`, astl's own one-line statement of
+  the defect, the same sentence `docs/rules.md` publishes.
+- The run declares `"columnKind": "unicodeCodePoints"`, which is what astl's
+  column numbers count.
+- [docs/sarif.md](docs/sarif.md) documents the output as an integration
+  contract, including the one limitation it does not hide: a region is a point,
+  and 93% of findings carry a line with no column.
+- [ADR 0007](docs/adr/0007-sarif-outside-the-compatibility-contract.md) records
+  that the SARIF output is not held to the pep8 compatibility contract and does
+  not try to match ansible-lint's own SARIF.
+
 ### Added - 2026-08-24
 
 - Documented installing a release binary directly, which needs neither Go nor

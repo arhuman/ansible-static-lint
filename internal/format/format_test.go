@@ -1,6 +1,7 @@
 package format
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,5 +248,306 @@ func TestSARIFIsValidJSON(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), `"ruleId": "name[play]"`) {
 		t.Fatalf("missing ruleId: %s", b.String())
+	}
+}
+
+// parsedSARIF is the shape the assertions below read. It restates the fields
+// rather than decoding into the emitter's own types, so that a renamed JSON tag
+// fails a test instead of round-tripping through the struct that renamed it.
+type parsedSARIF struct {
+	Runs []struct {
+		Tool struct {
+			Driver struct {
+				Rules []struct {
+					ID               string `json:"id"`
+					Name             string `json:"name"`
+					ShortDescription struct {
+						Text string `json:"text"`
+					} `json:"shortDescription"`
+					HelpURI    string            `json:"helpUri"`
+					Properties map[string]string `json:"properties"`
+				} `json:"rules"`
+			} `json:"driver"`
+		} `json:"tool"`
+		ColumnKind string `json:"columnKind"`
+		Results    []struct {
+			RuleID string `json:"ruleId"`
+			Level  string `json:"level"`
+		} `json:"results"`
+		Properties struct {
+			Scope struct {
+				Note       string   `json:"note"`
+				Taxonomy   string   `json:"taxonomy"`
+				Supported  []string `json:"supported"`
+				OutOfScope []struct {
+					ID       string `json:"id"`
+					Requires string `json:"requires"`
+				} `json:"outOfScope"`
+			} `json:"astl.scope"`
+		} `json:"properties"`
+	} `json:"runs"`
+}
+
+func decodeSARIF(t *testing.T, findings []rules.Finding, style rules.IDStyle) parsedSARIF {
+	t.Helper()
+	var b strings.Builder
+	if err := SARIF(&b, findings, "test", style); err != nil {
+		t.Fatal(err)
+	}
+	var doc parsedSARIF
+	if err := json.Unmarshal([]byte(b.String()), &doc); err != nil {
+		t.Fatalf("SARIF output is not valid JSON: %v", err)
+	}
+	if len(doc.Runs) != 1 {
+		t.Fatalf("got %d runs, want 1", len(doc.Runs))
+	}
+	return doc
+}
+
+// TestSARIFResultsResolveToADescriptor is the assertion an editor depends on:
+// a result whose ruleId names no entry in tool.driver.rules renders with no
+// name and no help link. Every tag astl can emit must therefore be declared,
+// in whichever taxonomy the run was asked for.
+func TestSARIFResultsResolveToADescriptor(t *testing.T) {
+	for _, style := range []rules.IDStyle{rules.IDUpstream, rules.IDNative} {
+		findings := make([]rules.Finding, 0, len(rules.Descriptors(style)))
+		for _, d := range rules.Descriptors(style) {
+			findings = append(findings, rules.Finding{Path: "a.yml", Line: 1, Tag: d.Upstream, Message: "m"})
+		}
+		doc := decodeSARIF(t, findings, style)
+		declared := make(map[string]bool, len(doc.Runs[0].Tool.Driver.Rules))
+		for _, r := range doc.Runs[0].Tool.Driver.Rules {
+			if declared[r.ID] {
+				t.Errorf("%s: descriptor %q declared twice", style, r.ID)
+			}
+			declared[r.ID] = true
+		}
+		for _, r := range doc.Runs[0].Results {
+			if !declared[r.RuleID] {
+				t.Errorf("%s: result ruleId %q has no descriptor", style, r.RuleID)
+			}
+		}
+	}
+}
+
+// TestSARIFDescriptorsCarryBothTaxonomies keeps the descriptor useful to a
+// consumer that reads one taxonomy and suppresses in the other, which is the
+// case for an editor sharing a repository's `.ansible-lint`.
+func TestSARIFDescriptorsCarryBothTaxonomies(t *testing.T) {
+	doc := decodeSARIF(t, nil, rules.IDNative)
+	for _, r := range doc.Runs[0].Tool.Driver.Rules {
+		if r.Properties["upstreamId"] == "" || r.Properties["nativeId"] == "" {
+			t.Errorf("descriptor %q is missing a taxonomy: %v", r.ID, r.Properties)
+		}
+		if r.ID != r.Properties["nativeId"] {
+			t.Errorf("descriptor id %q should be the native id under --ids native, got %q", r.ID, r.Properties["nativeId"])
+		}
+		if r.Name != r.Properties["upstreamId"] {
+			t.Errorf("descriptor %q should name its upstream counterpart, got %q", r.ID, r.Name)
+		}
+		if !strings.HasPrefix(r.HelpURI, "https://docs.ansible.com/projects/lint/rules/") {
+			t.Errorf("descriptor %q has no upstream help link: %q", r.ID, r.HelpURI)
+		}
+	}
+}
+
+// TestSARIFCarriesTheSeverity covers the one signal a consumer keys its own
+// severity mapping on. pep8 says it with a trailing ` (warning)` and that
+// suffix is tested end to end; SARIF says it with `level`, and nothing tested
+// that until now. Everything the ignore file and `warn_list` demote arrives
+// here, so a run of accepted debt would otherwise report as errors.
+func TestSARIFCarriesTheSeverity(t *testing.T) {
+	tests := map[string]struct {
+		finding rules.Finding
+		want    string
+	}{
+		"plain":             {rules.Finding{Path: "a.yml", Line: 3, Tag: "no-changed-when", Message: "m"}, "error"},
+		"warn_list":         {rules.Finding{Path: "a.yml", Line: 3, Tag: "no-changed-when", Message: "m", Warning: true}, "warning"},
+		"ignore file entry": {rules.Finding{Path: "a.yml", Line: 3, Tag: "no-changed-when", Message: "m", Warning: true, Ignored: true}, "warning"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			doc := decodeSARIF(t, []rules.Finding{tc.finding}, rules.IDUpstream)
+			if len(doc.Runs[0].Results) != 1 {
+				t.Fatalf("got %d results, want 1", len(doc.Runs[0].Results))
+			}
+			if got := doc.Runs[0].Results[0].Level; got != tc.want {
+				t.Errorf("level %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSARIFRegionOmitsAnAbsentColumn pins what docs/sarif.md tells an
+// integrator: most rules report a line and no column, and the region says so by
+// leaving the field out rather than sending 0. A zero would place a marker the
+// finding does not claim, and SARIF numbers columns from 1.
+func TestSARIFRegionOmitsAnAbsentColumn(t *testing.T) {
+	findings := []rules.Finding{
+		{Path: "a.yml", Line: 3, Tag: "no-changed-when", Message: "m"},
+		{Path: "a.yml", Line: 4, Column: 7, Tag: "name[play]", Message: "m"},
+	}
+	var b strings.Builder
+	if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), `"startColumn": 0`) {
+		t.Errorf("a column-less finding sent startColumn 0: %s", b.String())
+	}
+	if !strings.Contains(b.String(), `"startColumn": 7`) {
+		t.Errorf("a finding with a column lost it: %s", b.String())
+	}
+}
+
+// TestSARIFCleanRunIsStillAWellFormedReport covers the common CI case. A run
+// with nothing to report must send an empty results array, not null: the
+// schema requires an array, and a consumer iterating it would fault. The rest
+// of the document still has to describe the tool, which is the point of
+// declaring the scope in the first place.
+func TestSARIFCleanRunIsStillAWellFormedReport(t *testing.T) {
+	for name, findings := range map[string][]rules.Finding{"nil": nil, "empty": {}} {
+		t.Run(name, func(t *testing.T) {
+			var b strings.Builder
+			if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(b.String(), `"results": []`) {
+				t.Errorf("a clean run did not emit an empty results array: %s", b.String())
+			}
+			doc := decodeSARIF(t, findings, rules.IDUpstream)
+			if len(doc.Runs[0].Tool.Driver.Rules) == 0 {
+				t.Error("a clean run declares no rules, so a consumer cannot tell it ran")
+			}
+			if len(doc.Runs[0].Properties.Scope.OutOfScope) == 0 {
+				t.Error("a clean run does not say what it skipped, which is when it matters most")
+			}
+		})
+	}
+}
+
+// TestSARIFEscapesTextTakenFromTheRepository is the SARIF half of the property
+// TestPEP8KeepsOneFindingOnOneLine states for pep8. A path is chosen by the
+// linted repository, so it may hold a newline or an escape sequence. pep8 needs
+// a sanitizing pass; SARIF is asserted to need none, because the JSON encoder
+// escapes them, and that claim deserves a test rather than a comment.
+func TestSARIFEscapesTextTakenFromTheRepository(t *testing.T) {
+	forged := "ok.yml\nvictim.yml:9:1: syntax-check: Injected"
+	var b strings.Builder
+	findings := []rules.Finding{{Path: forged, Line: 1, Tag: "name", Message: "a\x1b[31mred"}}
+	if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"\n" + "victim.yml", "\x1b["} {
+		if strings.Contains(b.String(), raw) {
+			t.Errorf("raw control sequence %q reached the output", raw)
+		}
+	}
+	// Escaped, not dropped: SARIF carries the path a consumer must resolve, so
+	// unlike pep8 nothing may be removed from it.
+	doc := decodeSARIF(t, findings, rules.IDUpstream)
+	if got := doc.Runs[0].Results[0].RuleID; got != "name" {
+		t.Fatalf("ruleId %q", got)
+	}
+	if !strings.Contains(b.String(), `\n`) {
+		t.Errorf("the newline was dropped rather than escaped: %s", b.String())
+	}
+}
+
+func TestPlainText(t *testing.T) {
+	tests := map[string]string{
+		"a command can change the host with no `changed_when` guard": "a command can change the host with no changed_when guard",
+		"no code span here":        "no code span here",
+		"`leading` and `trailing`": "leading and trailing",
+		"":                         "",
+	}
+	for in, want := range tests {
+		if got := plainText(in); got != want {
+			t.Errorf("plainText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestSARIFDeclaresHowItCountsColumns pins a claim astl has to be able to
+// defend. yaml.v3's scanner advances a column per code point, so that is what
+// a column number counts here. ansible-lint declares utf16CodeUnits over
+// Python string indices, which is the same count inside the BMP and wrong
+// outside it; copying the declaration would make astl assert something untrue
+// (ADR 0007).
+func TestSARIFDeclaresHowItCountsColumns(t *testing.T) {
+	if got := decodeSARIF(t, nil, rules.IDUpstream).Runs[0].ColumnKind; got != "unicodeCodePoints" {
+		t.Fatalf("columnKind is %q, want unicodeCodePoints", got)
+	}
+}
+
+// TestSARIFDescriptionsAreNativeAndPlain covers both halves of the field: it
+// carries astl's own wording rather than upstream's, and it is rendered for a
+// SARIF `text` field, which a viewer shows verbatim and where the markdown
+// code spans the description is written with would read as literal backticks.
+func TestSARIFDescriptionsAreNativeAndPlain(t *testing.T) {
+	described := 0
+	for _, r := range decodeSARIF(t, nil, rules.IDUpstream).Runs[0].Tool.Driver.Rules {
+		if r.ShortDescription.Text == "" {
+			t.Errorf("descriptor %q has no description", r.ID)
+			continue
+		}
+		if strings.Contains(r.ShortDescription.Text, "`") {
+			t.Errorf("descriptor %q leaks a code span into plain text: %q", r.ID, r.ShortDescription.Text)
+		}
+		described++
+	}
+	if described != len(rules.Descriptors(rules.IDUpstream)) {
+		t.Errorf("described %d rules, declared %d", described, len(rules.Descriptors(rules.IDUpstream)))
+	}
+	// The one upstream sentence astl does carry verbatim is a finding's
+	// message, under --ids upstream. A rule description is not that, and must
+	// not become a copy of it.
+	for _, r := range decodeSARIF(t, nil, rules.IDUpstream).Runs[0].Tool.Driver.Rules {
+		if r.ID == "no-changed-when" && r.ShortDescription.Text == worded.Message {
+			t.Errorf("descriptor %q reproduces upstream's message rather than describing the rule", r.ID)
+		}
+	}
+}
+
+// TestSARIFDeclaresItsScope is the point of the property block: a report that
+// carries no findings for `fqcn` must say that `fqcn` was never evaluated,
+// rather than let a consumer read silence as a pass.
+func TestSARIFDeclaresItsScope(t *testing.T) {
+	scope := decodeSARIF(t, nil, rules.IDUpstream).Runs[0].Properties.Scope
+	if scope.Note == "" || scope.Taxonomy != "upstream" {
+		t.Errorf("scope block is not self-describing: %+v", scope)
+	}
+	if len(scope.Supported) != len(rules.IDs) {
+		t.Errorf("got %d supported rules, want %d", len(scope.Supported), len(rules.IDs))
+	}
+	supported := make(map[string]bool, len(scope.Supported))
+	for _, id := range scope.Supported {
+		supported[id] = true
+	}
+	if len(scope.OutOfScope) != len(rules.OutOfScope) {
+		t.Fatalf("got %d out-of-scope rules, want %d", len(scope.OutOfScope), len(rules.OutOfScope))
+	}
+	for _, r := range scope.OutOfScope {
+		if supported[r.ID] {
+			t.Errorf("%q is declared both supported and out of scope", r.ID)
+		}
+		if r.Requires == "" {
+			t.Errorf("out-of-scope rule %q says nothing about what it requires", r.ID)
+		}
+	}
+}
+
+// TestSARIFScopeStaysUpstreamUnderNativeIDs pins the one deliberate mixing of
+// taxonomies. Results and descriptors follow --ids, but the scope block cannot:
+// an unimplemented rule has no native name, so naming half the block natively
+// would make the two lists incomparable.
+func TestSARIFScopeStaysUpstreamUnderNativeIDs(t *testing.T) {
+	scope := decodeSARIF(t, nil, rules.IDNative).Runs[0].Properties.Scope
+	if scope.Taxonomy != "upstream" {
+		t.Fatalf("scope taxonomy is %q under --ids native, want upstream", scope.Taxonomy)
+	}
+	for _, id := range scope.Supported {
+		if rules.Canonical(id) != id {
+			t.Errorf("supported id %q is not an upstream id", id)
+		}
 	}
 }
