@@ -11,27 +11,60 @@ import (
 	"github.com/arhuman/ansible-static-lint/internal/rules"
 )
 
-// reSimpleSubtag matches subtags that ansible-lint's rich markup treats as a
-// style name, which makes an extra `[/]` leak into pep8 output.
-var reSimpleSubtag = regexp.MustCompile(`^\[[a-z]+\]$`)
+// bbKnown lists the tags ansible-lint's console renderer maps to a style
+// (ansiblelint/output.py, _bbcode_to_ansi_mappings). Everything else is an
+// unknown tag to that renderer, which is what leaks artifacts into its
+// uncolored output.
+var bbKnown = map[string]bool{
+	"bold": true, "dim": true, "warning": true, "error": true, "info": true,
+	"debug": true, "notset": true, "repr.path": true, "repr.number": true,
+	"repr.link": true, "failed": true, "success": true,
+}
 
-// Tag renders a rule tag for pep8 output in the requested taxonomy. Under the
-// upstream taxonomy it reproduces the stray `[/]` that ansible-lint's rich
-// markup leaves behind for single-word subtags; native ids print verbatim,
-// that artifact being strictly a compatibility concern.
-func Tag(tag string, style rules.IDStyle) string {
-	tag = rules.TagFor(tag, style)
-	if style == rules.IDNative {
-		return tag
+// reBBTag is upstream's tag_pattern, `\[([\w.]+)(?:=(.*?))?\]|\[/\]`, with
+// Python's unicode `\w` spelled out for RE2.
+var reBBTag = regexp.MustCompile(`\[([\p{L}\p{N}_.]+)(?:=(.*?))?\]|\[/\]`)
+
+// renderBB reproduces ansible-lint's plain-style BBCode rendering
+// (ansiblelint/output.py, since 26.x rich is gone and this stack machine is
+// the renderer). A known tag renders as nothing; an unknown tag is kept
+// verbatim and pushed as "unknown" (except `link`, which is not pushed); a
+// `[/]` prints literally exactly when it pops an unknown tag or an empty
+// stack. Every stray `[/]` artifact in upstream's pep8 output is this
+// machine's residue, so the emulation is the machine itself, not a heuristic
+// over its outputs. Upstream's later `[link=url]title[/link]` substitution
+// pass is not modeled: the pep8 template emits no link markup.
+func renderBB(text string) string {
+	var out strings.Builder
+	var stack []bool // true = known tag
+	idx := 0
+	for _, m := range reBBTag.FindAllStringSubmatchIndex(text, -1) {
+		out.WriteString(text[idx:m[0]])
+		idx = m[1]
+		if m[2] < 0 { // the `[/]` alternative
+			if n := len(stack); n > 0 {
+				known := stack[n-1]
+				stack = stack[:n-1]
+				if known {
+					continue
+				}
+			}
+			out.WriteString("[/]")
+			continue
+		}
+		name := text[m[2]:m[3]]
+		switch {
+		case bbKnown[name]:
+			stack = append(stack, true)
+		case name == "link":
+			out.WriteString(text[m[0]:m[1]])
+		default:
+			out.WriteString(text[m[0]:m[1]])
+			stack = append(stack, false)
+		}
 	}
-	i := strings.IndexByte(tag, '[')
-	if i < 0 {
-		return tag
-	}
-	if reSimpleSubtag.MatchString(tag[i:]) {
-		return tag + "[/]"
-	}
-	return tag
+	out.WriteString(text[idx:])
+	return out.String()
 }
 
 // PEP8 writes findings in `path:line[:column]: tag: message` form. The style
@@ -67,11 +100,26 @@ func writePEP8(w io.Writer, f rules.Finding, style rules.IDStyle) error {
 	if f.Column > 0 {
 		pos = fmt.Sprintf("%d:%d", f.Line, f.Column)
 	}
-	level := ""
-	if f.Warning {
-		level = " (warning)"
+	path, tag, msg := sanitize(f.Path), rules.TagFor(f.Tag, style), sanitize(f.MessageFor(style))
+	if style == rules.IDNative {
+		level := ""
+		if f.Warning {
+			level = " (warning)"
+		}
+		_, err := fmt.Fprintf(w, "%s:%s: %s: %s%s\n", path, pos, tag, msg, level)
+		return err
 	}
-	_, err := fmt.Fprintf(w, "%s:%s: %s: %s%s\n", sanitize(f.Path), pos, Tag(f.Tag, style), sanitize(f.MessageFor(style)), level)
+	// Upstream's PEP8Formatter template, rendered through the same machine, so
+	// its `[/]` artifacts land byte for byte wherever upstream leaves them.
+	level := "error"
+	if f.Warning {
+		level = "warning"
+	}
+	line := fmt.Sprintf("[repr.path]%s[/][dim]:%s:[/] [%s][bold]%s[/]: %s[/]", path, pos, level, tag, msg)
+	if f.Warning {
+		line += fmt.Sprintf(" [dim][%s](%s)[/][/]", level, level)
+	}
+	_, err := fmt.Fprintln(w, renderBB(line))
 	return err
 }
 

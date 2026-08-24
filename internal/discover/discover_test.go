@@ -280,3 +280,41 @@ func TestWalkKindFollowsTheSymlinkTarget(t *testing.T) {
 			items[0].Kind, "vars")
 	}
 }
+
+// TestWalkRoleNeedsARoleSubdir pins upstream's _has_role_subdirs guard (their
+// #5079, astl issue 0011): a directory under roles/ that carries none of the
+// five canonical role subdirectories is not a role, even when it holds nested
+// sub-roles, and those sub-roles are the role items instead. Found on
+// kubespray's roles/remove-node, a pure container for three sub-roles.
+func TestWalkRoleNeedsARoleSubdir(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{
+		"roles/real/tasks",
+		"roles/container/sub-role/tasks",
+		"roles/only-files/files",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, _, err := Walk([]string{dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := map[string]bool{}
+	for _, it := range items {
+		if it.Kind == KindRole {
+			roles[filepath.Base(it.Abs)] = true
+		}
+	}
+	for _, want := range []string{"real", "sub-role"} {
+		if !roles[want] {
+			t.Errorf("role %q not discovered: %v", want, roles)
+		}
+	}
+	for _, not := range []string{"container", "only-files"} {
+		if roles[not] {
+			t.Errorf("%q discovered as a role, want skipped", not)
+		}
+	}
+}

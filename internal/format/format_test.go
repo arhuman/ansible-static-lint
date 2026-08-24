@@ -8,6 +8,10 @@ import (
 	"github.com/arhuman/ansible-static-lint/internal/rules"
 )
 
+// TestTagMarkupLeak pins where upstream's renderer leaks `[/]` artifacts into
+// pep8 lines. A `[\w.]+` subtag is an unknown BBCode tag, so the template's
+// closer right after it prints literally; a subtag with a dash is not a tag at
+// all and leaks nothing.
 func TestTagMarkupLeak(t *testing.T) {
 	tests := map[string]string{
 		"no-changed-when":                   "no-changed-when",
@@ -17,14 +21,68 @@ func TestTagMarkupLeak(t *testing.T) {
 		"meta-runtime[unsupported-version]": "meta-runtime[unsupported-version]",
 	}
 	for in, want := range tests {
-		if got := Tag(in, rules.IDUpstream); got != want {
-			t.Errorf("Tag(%q) = %q, want %q", in, got, want)
+		var b strings.Builder
+		if err := PEP8(&b, []rules.Finding{{Path: "a.yml", Line: 1, Tag: in, Message: "m"}}, rules.IDUpstream); err != nil {
+			t.Fatal(err)
+		}
+		got := "a.yml:1: " + want + ": m\n"
+		if b.String() != got {
+			t.Errorf("PEP8(%q) = %q, want %q", in, b.String(), got)
 		}
 	}
 }
 
+// TestMessageMarkupLeak is the message-side half of the same machine (astl
+// issue 0012, found on kubespray): a `[\w.]+` sequence inside the message is
+// an unknown tag too, and the template's final closer then pops it and prints
+// literally at end of line. A bracketed run holding a dash, as in var-naming's
+// regex message, is not a tag and leaves no artifact.
+func TestMessageMarkupLeak(t *testing.T) {
+	tests := map[string]struct{ msg, want string }{
+		"word tag leaks": {
+			"Avoid paths. (a/{{ b[container_manager] }})",
+			"a.yml:1: role-name[path][/]: Avoid paths. (a/{{ b[container_manager] }})[/]\n",
+		},
+		"dashed run does not": {
+			"Variables names should match ^[a-z_][a-z0-9_]*$ regex.",
+			"a.yml:1: role-name[path][/]: Variables names should match ^[a-z_][a-z0-9_]*$ regex.\n",
+		},
+		"one artifact for two tags": {
+			"first [foo] then [bar_baz]",
+			"a.yml:1: role-name[path][/]: first [foo] then [bar_baz][/]\n",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var b strings.Builder
+			if err := PEP8(&b, []rules.Finding{{Path: "a.yml", Line: 1, Tag: "role-name[path]", Message: tc.msg}}, rules.IDUpstream); err != nil {
+				t.Fatal(err)
+			}
+			if b.String() != tc.want {
+				t.Errorf("got %q, want %q", b.String(), tc.want)
+			}
+		})
+	}
+}
+
+// TestMessageMarkupLeakBeforeWarningSuffix pins the interaction of the two
+// suffixes: the message's leaked closer lands before the ` (warning)` block,
+// whose own tags are all known and render silently.
+func TestMessageMarkupLeakBeforeWarningSuffix(t *testing.T) {
+	var b strings.Builder
+	f := rules.Finding{Path: "a.yml", Line: 1, Tag: "run-once[task]", Message: "see [foo]", Warning: true}
+	if err := PEP8(&b, []rules.Finding{f}, rules.IDUpstream); err != nil {
+		t.Fatal(err)
+	}
+	want := "a.yml:1: run-once[task][/]: see [foo][/] (warning)\n"
+	if b.String() != want {
+		t.Errorf("got %q, want %q", b.String(), want)
+	}
+}
+
 // TestTagNativeStyleHasNoMarkupLeak pins that the `[/]` artifact belongs to the
-// upstream compatibility contract and never reaches native ids.
+// upstream compatibility contract and never reaches native ids, even when the
+// message carries a tag-like bracket.
 func TestTagNativeStyleHasNoMarkupLeak(t *testing.T) {
 	tests := map[string]string{
 		"no-changed-when":                   "task.unguarded-change",
@@ -34,8 +92,14 @@ func TestTagNativeStyleHasNoMarkupLeak(t *testing.T) {
 		"meta-runtime[unsupported-version]": "meta.runtime-version[unsupported-version]",
 	}
 	for in, want := range tests {
-		if got := Tag(in, rules.IDNative); got != want {
-			t.Errorf("Tag(%q, native) = %q, want %q", in, got, want)
+		var b strings.Builder
+		f := rules.Finding{Path: "a.yml", Line: 1, Tag: in, Message: "see [foo]", NativeMessage: "see [foo]"}
+		if err := PEP8(&b, []rules.Finding{f}, rules.IDNative); err != nil {
+			t.Fatal(err)
+		}
+		got := "a.yml:1: " + want + ": see [foo]\n"
+		if b.String() != got {
+			t.Errorf("PEP8(%q, native) = %q, want %q", in, b.String(), got)
 		}
 	}
 }

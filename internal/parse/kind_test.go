@@ -28,6 +28,15 @@ func TestYAMLKindIsPromotedToPlaybook(t *testing.T) {
 		"sequence without hosts": {
 			"---\n- name: not a play\n", "yaml",
 		},
+		// A first play holding only an import_playbook is still a playbook;
+		// missing it silences the whole file, later plays included (issue
+		// 0010, found on kubespray's tests/testcases/tests.yml).
+		"first play is an import_playbook": {
+			"---\n- name: Import\n  import_playbook: other.yml\n\n- hosts: all\n  tasks: []\n", "playbook",
+		},
+		"first play is a fqcn import_playbook": {
+			"---\n- ansible.builtin.import_playbook: other.yml\n", "playbook",
+		},
 		"sequence of scalars": {
 			"---\n- one\n- two\n", "yaml",
 		},

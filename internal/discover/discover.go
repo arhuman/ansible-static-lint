@@ -297,10 +297,30 @@ func (w *walk) add(abs, kind string, size int64) {
 	})
 }
 
+// roleSubdirsStrict is upstream's ROLE_SUBDIRS. It is narrower than
+// roleMarkers on purpose: templates/ and files/ make a directory look like a
+// role for the namespace test, but do not qualify it as a role root.
+var roleSubdirsStrict = []string{"tasks", "meta", "vars", "defaults", "handlers"}
+
+func hasRoleSubdirs(dir string) bool {
+	for _, sub := range roleSubdirsStrict {
+		if fi, err := os.Stat(filepath.Join(dir, sub)); err == nil && fi.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // isRoleDir mirrors ansible-lint's role discovery: a direct child of a
 // `roles/` directory, or a grandchild when the intermediate directory is a
-// namespace-style folder rather than a role itself.
+// namespace-style folder rather than a role itself. Either way the candidate
+// must carry a canonical role subdirectory (upstream's _has_role_subdirs
+// guard, their #5079): a container directory holding only nested sub-roles is
+// not a role (astl issue 0011).
 func isRoleDir(dir string) bool {
+	if !hasRoleSubdirs(dir) {
+		return false
+	}
 	parent := filepath.Base(filepath.Dir(dir))
 	if parent == "roles" {
 		return true
