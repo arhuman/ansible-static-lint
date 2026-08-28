@@ -10,6 +10,12 @@ All notable changes to this project are documented here. Format:
 
 ## [0.4.0] - 2026-08-28
 
+### Fixed - 2026-08-28 (issue 0013, found on timothystewart6/k3s-ansible)
+
+- `exclude_paths` entries are matched with gitignore semantics, as
+  ansible-lint does through pathspec: `**` globs now work, and a plain entry
+  matches a path name rather than any substring of it.
+
 ### Added - 2026-08-28
 
 - `make release` now stamps the version pins in the adoption snippets
