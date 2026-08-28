@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -162,7 +163,14 @@ const upstreamRuleDoc = "https://docs.ansible.com/projects/lint/rules/"
 // deliberately does not implement. A consumer can therefore tell a rule that
 // found nothing from a rule that never ran, which is the difference between
 // astl's report and a full ansible-lint run.
-func SARIF(w io.Writer, findings []rules.Finding, version string, style rules.IDStyle) error {
+//
+// workDir is the directory a result's relative artifact URI is relative to,
+// declared as the run's invocation working directory so a report that is saved
+// or moved can still resolve its paths. An empty workDir emits no invocations
+// array rather than an unresolvable one. sel is the run's configuration, from
+// which the scope block names the rules this run could actually report: a
+// subset of the supported list, which says only what astl implements.
+func SARIF(w io.Writer, findings []rules.Finding, version string, style rules.IDStyle, workDir string, sel rules.Selection) error {
 	descriptors, supported := sarifRules(style)
 	out := sarifDoc{
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -174,12 +182,14 @@ func SARIF(w io.Writer, findings []rules.Finding, version string, style rules.ID
 				InformationURI: "https://github.com/arhuman/ansible-static-lint",
 				Rules:          descriptors,
 			}},
-			ColumnKind: "unicodeCodePoints",
-			Results:    sarifResults(findings, style),
+			ColumnKind:  "unicodeCodePoints",
+			Invocations: sarifInvocations(workDir),
+			Results:     sarifResults(findings, style),
 			Properties: sarifRunProperties{Scope: sarifScope{
 				Note:       scopeNote,
 				Taxonomy:   string(rules.IDUpstream),
 				Supported:  supported,
+				Enabled:    rules.EnabledRules(sel),
 				OutOfScope: sarifOutOfScope(),
 			}},
 		}},
@@ -244,10 +254,18 @@ type (
 		Requires string `json:"requires"`
 	}
 	sarifScope struct {
-		Note       string             `json:"note"`
-		Taxonomy   string             `json:"taxonomy"`
-		Supported  []string           `json:"supported"`
+		Note      string   `json:"note"`
+		Taxonomy  string   `json:"taxonomy"`
+		Supported []string `json:"supported"`
+		// Enabled is what this run could report; Supported is what astl can
+		// report at all. A rule in Supported but not Enabled was configured off,
+		// so its silence is no more a pass than an out-of-scope rule's.
+		Enabled    []string           `json:"enabled"`
 		OutOfScope []sarifUnsupported `json:"outOfScope"`
+	}
+	sarifInvocation struct {
+		ExecutionSuccessful bool           `json:"executionSuccessful"`
+		WorkingDirectory    *sarifArtifact `json:"workingDirectory,omitempty"`
 	}
 	sarifRunProperties struct {
 		Scope sarifScope `json:"astl.scope"`
@@ -259,9 +277,10 @@ type (
 		// declares utf16CodeUnits while counting Python string indices, so
 		// its declaration is wrong outside the BMP and is not copied here
 		// (ADR 0007).
-		ColumnKind string             `json:"columnKind"`
-		Results    []sarifResult      `json:"results"`
-		Properties sarifRunProperties `json:"properties"`
+		ColumnKind  string             `json:"columnKind"`
+		Invocations []sarifInvocation  `json:"invocations,omitempty"`
+		Results     []sarifResult      `json:"results"`
+		Properties  sarifRunProperties `json:"properties"`
 	}
 	sarifDoc struct {
 		Schema  string     `json:"$schema"`
@@ -269,6 +288,26 @@ type (
 		Runs    []sarifRun `json:"runs"`
 	}
 )
+
+// sarifInvocations declares the directory the results' relative artifact URIs
+// resolve against, as the absolute `file:` URI the spec asks for, with the
+// trailing slash that marks a directory. executionSuccessful is true because
+// the document is only written once the run completed: a run that failed
+// outright exits before any format is rendered.
+//
+// An empty workDir means the working directory could not be read, and the
+// results carry absolute paths instead. Nothing then needs a base, so the whole
+// array is omitted rather than filled with a URI that resolves nowhere.
+func sarifInvocations(workDir string) []sarifInvocation {
+	if workDir == "" {
+		return nil
+	}
+	uri := (&url.URL{Scheme: "file", Path: workDir + "/"}).String()
+	return []sarifInvocation{{
+		ExecutionSuccessful: true,
+		WorkingDirectory:    &sarifArtifact{URI: uri},
+	}}
+}
 
 func sarifResults(findings []rules.Finding, style rules.IDStyle) []sarifResult {
 	out := make([]sarifResult, 0, len(findings))

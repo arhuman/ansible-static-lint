@@ -141,17 +141,7 @@ func looksLikeRole(dir string) bool {
 // traversal continues, so one unreadable directory does not lose the rest of
 // the run; callers are expected to report them as warnings.
 func Walk(roots []string, excluded []string) (items []Item, soft []error, err error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		wd = ""
-	}
-	// The working directory and the roots are resolved for the same reason the
-	// entries are: a resolved symlink target has to be comparable to them, or a
-	// file inside the tree prints as an absolute path. It is not hypothetical.
-	// macOS makes /tmp and /var symlinks, so any run under a temporary
-	// directory has an unresolved working directory unless this happens.
-	wd = resolvePath(wd)
-	w := &walk{wd: wd, excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{}}
+	w := &walk{wd: WorkingDir(), excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{}}
 
 	for _, root := range roots {
 		absRoot, err := filepath.Abs(root)
@@ -331,6 +321,27 @@ func isRoleDir(dir string) bool {
 	}
 	grand := filepath.Base(filepath.Dir(filepath.Dir(dir)))
 	return grand == "roles" && !looksLikeRole(filepath.Dir(dir))
+}
+
+// WorkingDir returns the base Walk renders its relative display paths against:
+// the process working directory with every symlink component resolved, or ""
+// when it cannot be read, in which case Walk prints absolute paths.
+//
+// It is exported so a report that carries relative paths can also declare the
+// directory they are relative to, and be guaranteed to declare the same one
+// Walk used.
+//
+// The working directory is resolved for the same reason the entries are: a
+// resolved symlink target has to be comparable to it, or a file inside the tree
+// prints as an absolute path. It is not hypothetical. macOS makes /tmp and /var
+// symlinks, so any run under a temporary directory has an unresolved working
+// directory unless this happens.
+func WorkingDir() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return resolvePath(wd)
 }
 
 // resolvePath returns path with every symlink component resolved, or path

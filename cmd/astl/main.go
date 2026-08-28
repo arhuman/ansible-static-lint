@@ -170,7 +170,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
-	findings, unchecked, err := lint(paths, cfg, stderr)
+	// Built here rather than inside lint because the SARIF report declares the
+	// rules the run applied, and deriving the selection twice would let what a
+	// run does and what it says drift apart.
+	sel := rules.Selection{
+		Profile:    cfg.Profile,
+		EnableList: cfg.EnableList,
+		SkipList:   cfg.SkipList,
+		WarnList:   cfg.WarnList,
+	}
+	findings, unchecked, err := lint(paths, cfg, sel, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "astl:", err)
 		return exitError
@@ -181,7 +190,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// same result as applying it upstream's way, mid-pipeline.
 	findings = ignores.Apply(findings)
 
-	if err := emit(stdout, findings, *formatName, *idsName); err != nil {
+	if err := emit(stdout, findings, *formatName, *idsName, discover.WorkingDir(), sel); err != nil {
 		fmt.Fprintln(stderr, "astl:", err)
 		return exitError
 	}
@@ -245,7 +254,9 @@ func failures(findings []rules.Finding) int {
 }
 
 // emit renders findings to w in the requested format and rule-id taxonomy.
-func emit(w io.Writer, findings []rules.Finding, formatName, idsName string) error {
+// workDir and sel describe the run rather than its findings, and only the SARIF
+// document has anywhere to put them; pep8 is a line format and ignores both.
+func emit(w io.Writer, findings []rules.Finding, formatName, idsName, workDir string, sel rules.Selection) error {
 	var style rules.IDStyle
 	switch idsName {
 	case string(rules.IDUpstream):
@@ -262,7 +273,7 @@ func emit(w io.Writer, findings []rules.Finding, formatName, idsName string) err
 	case "pep8":
 		err = format.PEP8(bw, findings, style)
 	case "sarif":
-		err = format.SARIF(bw, findings, build.version, style)
+		err = format.SARIF(bw, findings, build.version, style, workDir, sel)
 	default:
 		return fmt.Errorf("unknown format %q", formatName)
 	}
@@ -276,7 +287,11 @@ func emit(w io.Writer, findings []rules.Finding, formatName, idsName string) err
 // discovered, read or parsed are reported on warn and skipped, and counted into
 // the returned unchecked total so the caller can refuse to call the run clean;
 // only a failure that invalidates the whole run comes back as an error.
-func lint(paths []string, cfg config.Config, warn io.Writer) (found []rules.Finding, unchecked int, err error) {
+//
+// sel comes from the caller rather than from cfg here because the report needs
+// it too, and deriving it twice would let the rules a run applies and the rules
+// it declares drift apart.
+func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer) (found []rules.Finding, unchecked int, err error) {
 	items, soft, err := discover.Walk(paths, cfg.ExcludePaths)
 	for _, e := range soft {
 		fmt.Fprintln(warn, "astl:", e)
@@ -363,12 +378,7 @@ func lint(paths []string, cfg config.Config, warn io.Writer) (found []rules.Find
 		return nil, 0, err
 	}
 
-	all = rules.Select(all, rules.Selection{
-		Profile:    cfg.Profile,
-		EnableList: cfg.EnableList,
-		SkipList:   cfg.SkipList,
-		WarnList:   cfg.WarnList,
-	})
+	all = rules.Select(all, sel)
 	rules.Sort(all)
 	return rules.Dedupe(all), unchecked, nil
 }

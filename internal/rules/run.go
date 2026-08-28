@@ -273,6 +273,30 @@ func Select(findings []Finding, sel Selection) []Finding {
 	return out
 }
 
+// EnabledRules lists the rules a run under sel can report, as bare upstream ids
+// in IDs order. It answers a question the findings cannot: a rule that fired
+// nothing and a rule that never ran are both absent from the results.
+//
+// A rule is enabled when skip_list does not name it, and either enable_list
+// names it or the profile keeps it and it is not one of the opt-in rules.
+// skip_list beating enable_list mirrors Select, where Filter runs first.
+// WarnList is not consulted: it sets a finding's level, not whether it runs.
+func EnabledRules(sel Selection) []string {
+	skip := canonicalSet(sel.SkipList)
+	enable := canonicalSet(sel.EnableList)
+
+	out := make([]string, 0, len(IDs))
+	for _, id := range IDs {
+		if skip[id] {
+			continue
+		}
+		if enable[id] || (inProfile(sel.Profile, id) && !optIn[id]) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // selects reports whether the profile keeps f, with enable_list overriding it.
 func selects(profile string, enable map[string]bool, f Finding) bool {
 	if enable[f.Tag] || enable[f.RuleID()] {

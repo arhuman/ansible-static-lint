@@ -154,7 +154,7 @@ func TestSARIFSwitchesMessageWithTheTaxonomy(t *testing.T) {
 	}
 	for style, want := range tests {
 		var b strings.Builder
-		if err := SARIF(&b, []rules.Finding{worded}, "test", style); err != nil {
+		if err := SARIF(&b, []rules.Finding{worded}, "test", style, "", rules.Selection{}); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(b.String(), `"text": `+strconv.Quote(want)) {
@@ -240,7 +240,7 @@ func TestPEP8KeepsOneFindingOnOneLine(t *testing.T) {
 
 func TestSARIFIsValidJSON(t *testing.T) {
 	var b strings.Builder
-	if err := SARIF(&b, []rules.Finding{{Path: "a.yml", Line: 1, Tag: "name[play]", Message: "m"}}, "test", rules.IDUpstream); err != nil {
+	if err := SARIF(&b, []rules.Finding{{Path: "a.yml", Line: 1, Tag: "name[play]", Message: "m"}}, "test", rules.IDUpstream, "", rules.Selection{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), `"version": "2.1.0"`) {
@@ -269,8 +269,14 @@ type parsedSARIF struct {
 				} `json:"rules"`
 			} `json:"driver"`
 		} `json:"tool"`
-		ColumnKind string `json:"columnKind"`
-		Results    []struct {
+		ColumnKind  string `json:"columnKind"`
+		Invocations []struct {
+			ExecutionSuccessful bool `json:"executionSuccessful"`
+			WorkingDirectory    *struct {
+				URI string `json:"uri"`
+			} `json:"workingDirectory"`
+		} `json:"invocations"`
+		Results []struct {
 			RuleID string `json:"ruleId"`
 			Level  string `json:"level"`
 		} `json:"results"`
@@ -279,6 +285,7 @@ type parsedSARIF struct {
 				Note       string   `json:"note"`
 				Taxonomy   string   `json:"taxonomy"`
 				Supported  []string `json:"supported"`
+				Enabled    []string `json:"enabled"`
 				OutOfScope []struct {
 					ID       string `json:"id"`
 					Requires string `json:"requires"`
@@ -290,8 +297,16 @@ type parsedSARIF struct {
 
 func decodeSARIF(t *testing.T, findings []rules.Finding, style rules.IDStyle) parsedSARIF {
 	t.Helper()
+	return decodeRun(t, findings, style, "", rules.Selection{})
+}
+
+// decodeRun is decodeSARIF for the two fields that describe the run rather than
+// its findings: the invocation's working directory and the selection the scope
+// block reports as enabled.
+func decodeRun(t *testing.T, findings []rules.Finding, style rules.IDStyle, workDir string, sel rules.Selection) parsedSARIF {
+	t.Helper()
 	var b strings.Builder
-	if err := SARIF(&b, findings, "test", style); err != nil {
+	if err := SARIF(&b, findings, "test", style, workDir, sel); err != nil {
 		t.Fatal(err)
 	}
 	var doc parsedSARIF
@@ -388,7 +403,7 @@ func TestSARIFRegionOmitsAnAbsentColumn(t *testing.T) {
 		{Path: "a.yml", Line: 4, Column: 7, Tag: "name[play]", Message: "m"},
 	}
 	var b strings.Builder
-	if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+	if err := SARIF(&b, findings, "test", rules.IDUpstream, "", rules.Selection{}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(b.String(), `"startColumn": 0`) {
@@ -408,7 +423,7 @@ func TestSARIFCleanRunIsStillAWellFormedReport(t *testing.T) {
 	for name, findings := range map[string][]rules.Finding{"nil": nil, "empty": {}} {
 		t.Run(name, func(t *testing.T) {
 			var b strings.Builder
-			if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+			if err := SARIF(&b, findings, "test", rules.IDUpstream, "", rules.Selection{}); err != nil {
 				t.Fatal(err)
 			}
 			if !strings.Contains(b.String(), `"results": []`) {
@@ -434,7 +449,7 @@ func TestSARIFEscapesTextTakenFromTheRepository(t *testing.T) {
 	forged := "ok.yml\nvictim.yml:9:1: syntax-check: Injected"
 	var b strings.Builder
 	findings := []rules.Finding{{Path: forged, Line: 1, Tag: "name", Message: "a\x1b[31mred"}}
-	if err := SARIF(&b, findings, "test", rules.IDUpstream); err != nil {
+	if err := SARIF(&b, findings, "test", rules.IDUpstream, "", rules.Selection{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, raw := range []string{"\n" + "victim.yml", "\x1b["} {
@@ -548,6 +563,95 @@ func TestSARIFScopeStaysUpstreamUnderNativeIDs(t *testing.T) {
 	for _, id := range scope.Supported {
 		if rules.Canonical(id) != id {
 			t.Errorf("supported id %q is not an upstream id", id)
+		}
+	}
+}
+
+// TestSARIFRecordsWorkingDirectory covers what the invocation block is for: a
+// result's artifact URI stays relative, which only resolves against a base, and
+// a report read from anywhere other than where it was produced has no other way
+// to learn that base.
+func TestSARIFRecordsWorkingDirectory(t *testing.T) {
+	inv := decodeRun(t, nil, rules.IDUpstream, "/repo/ansible", rules.Selection{}).Runs[0].Invocations
+	if len(inv) != 1 {
+		t.Fatalf("got %d invocations, want 1", len(inv))
+	}
+	if !inv[0].ExecutionSuccessful {
+		t.Error("executionSuccessful is false on a completed run")
+	}
+	if inv[0].WorkingDirectory == nil {
+		t.Fatal("invocation carries no workingDirectory")
+	}
+	// The spec asks for an absolute URI, and a directory URI ends with a slash
+	// so a consumer resolving `roles/x.yml` against it does not lose the last
+	// segment.
+	if got := inv[0].WorkingDirectory.URI; got != "file:///repo/ansible/" {
+		t.Errorf("workingDirectory uri = %q, want file:///repo/ansible/", got)
+	}
+}
+
+// TestSARIFOmitsUnknownWorkingDirectory pins the other half: when the working
+// directory could not be read the results carry absolute paths, so there is
+// nothing to declare and an empty invocation would only assert something false.
+func TestSARIFOmitsUnknownWorkingDirectory(t *testing.T) {
+	var b strings.Builder
+	if err := SARIF(&b, nil, "test", rules.IDUpstream, "", rules.Selection{}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "invocations") {
+		t.Errorf("empty workDir still emitted an invocations array: %s", b.String())
+	}
+}
+
+// TestSARIFScopeListsEnabledRules is the distinction the block exists to draw.
+// supported says what astl implements; enabled says what this run configured on.
+// A rule in neither enabled nor outOfScope reported nothing because it was
+// switched off, which is again not a pass.
+func TestSARIFScopeListsEnabledRules(t *testing.T) {
+	sel := rules.Selection{Profile: "basic", SkipList: []string{"name"}, EnableList: []string{"no-prompting"}}
+	scope := decodeRun(t, nil, rules.IDUpstream, "", sel).Runs[0].Properties.Scope
+	if len(scope.Enabled) == 0 {
+		t.Fatal("scope declares no enabled rules")
+	}
+
+	supported := make(map[string]bool, len(scope.Supported))
+	for _, id := range scope.Supported {
+		supported[id] = true
+	}
+	outOfScope := make(map[string]bool, len(scope.OutOfScope))
+	for _, r := range scope.OutOfScope {
+		outOfScope[r.ID] = true
+	}
+	enabled := make(map[string]bool, len(scope.Enabled))
+	for _, id := range scope.Enabled {
+		if !supported[id] {
+			t.Errorf("enabled rule %q is not declared supported", id)
+		}
+		if outOfScope[id] {
+			t.Errorf("%q is declared both enabled and out of scope", id)
+		}
+		enabled[id] = true
+	}
+	if enabled["name"] {
+		t.Error("a skip_list rule is still declared enabled")
+	}
+	if !enabled["no-prompting"] {
+		t.Error("an enable_list rule is not declared enabled")
+	}
+	if len(scope.Enabled) >= len(scope.Supported) {
+		t.Errorf("a profile with a skip_list enabled %d of %d rules, want fewer",
+			len(scope.Enabled), len(scope.Supported))
+	}
+}
+
+// TestSARIFEnabledStaysUpstreamUnderNativeIDs extends the rule that governs the
+// rest of the scope block to its new list: an id there is comparable with
+// outOfScope, which has no native spelling, so it stays upstream.
+func TestSARIFEnabledStaysUpstreamUnderNativeIDs(t *testing.T) {
+	sel := rules.Selection{EnableList: []string{"no-prompting"}}
+	for _, id := range decodeRun(t, nil, rules.IDNative, "", sel).Runs[0].Properties.Scope.Enabled {
+		if rules.Canonical(id) != id {
+			t.Errorf("enabled id %q is not an upstream id", id)
 		}
 	}
 }

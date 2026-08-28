@@ -91,6 +91,7 @@ The run carries `properties["astl.scope"]`:
   "note": "astl reports only the ansible-lint rules decidable from YAML source alone. ...",
   "taxonomy": "upstream",
   "supported": ["name", "no-changed-when", "..."],
+  "enabled": ["name", "no-changed-when", "..."],
   "outOfScope": [
     { "id": "fqcn", "requires": "resolving module names through Ansible's plugin loader" },
     { "id": "latest", "requires": "nothing: static, not implemented yet" }
@@ -98,18 +99,51 @@ The run carries `properties["astl.scope"]`:
 }
 ```
 
-This is the part that keeps a fast pass honest. `supported` names the 38 rules
-astl implements and `outOfScope` the 15 it does not, so a report with no `fqcn`
-finding does not mean `fqcn` passes: it means `fqcn` never ran. A consumer that greys out the
-rules under `outOfScope`, or that declines to present the run as a full lint,
-is reading the document correctly.
+This is the part that keeps a fast pass honest. Three lists answer three
+different questions: `supported` names the 38 rules astl implements at all
+(its capability boundary, including 5 opt-in rules the default profile does
+not run), `enabled` names the subset this run actually turned on after
+applying the profile, `skip_list` and `enable_list`, and `outOfScope` names
+the 15 rules astl cannot run under any configuration. A report with no `fqcn`
+finding does not mean `fqcn` passes: it means `fqcn` never ran. A consumer
+that greys out the rules under `outOfScope`, or a `supported` rule missing
+from `enabled`, or that declines to present the run as a full lint, is
+reading the document correctly.
 
-`supported` and `outOfScope` are always upstream ids, whatever `--ids` the run
-used, because a rule astl does not implement has no native name and the two
-lists have to stay comparable. `requires` says what reproducing the rule would
-need, and reads `nothing: static, not implemented yet` for the ones held back
-by effort rather than by the static boundary. [scope.md](scope.md) quantifies
+`enabled` is not "ran": a rule can be enabled and still produce no finding
+because no file in the run triggers it. It says what was configured to run,
+not what fired.
+
+`supported`, `enabled` and `outOfScope` are always upstream ids, in the same
+order and taxonomy, whatever `--ids` the run used, because a rule astl does
+not implement has no native name and the lists have to stay directly
+comparable. `requires` says what reproducing an out-of-scope rule would need,
+and reads `nothing: static, not implemented yet` for the ones held back by
+effort rather than by the static boundary. [scope.md](scope.md) quantifies
 what each one costs.
+
+## The invocation
+
+The run carries `invocations`, one entry:
+
+```json
+{
+  "executionSuccessful": true,
+  "workingDirectory": { "uri": "file:///abs/path/to/repo/" }
+}
+```
+
+Result `artifactLocation.uri` values are relative paths. `workingDirectory`
+is the directory they are relative to, so a report that is saved or moved
+away from the linted repository still resolves. The URI is an absolute
+`file:` URI with a trailing slash, symlink-resolved, and is exactly the base
+directory results were relativized against; nothing needs deriving from the
+document's own location.
+
+When the working directory cannot be determined, `invocations` is omitted
+entirely rather than filled with a URI that resolves nowhere. Result paths
+are then absolute already, so no base is needed. `executionSuccessful` is
+always `true`: the document is only written once the run has completed.
 
 ## Stability
 
@@ -117,12 +151,17 @@ This document is not under the pep8 compatibility contract, and does not try to
 match ansible-lint's own SARIF; [ADR
 0007](adr/0007-sarif-outside-the-compatibility-contract.md) sets out why and
 what governs it instead. What is promised is stability towards a consumer.
+[ADR 0008](adr/0008-sarif-invocation-and-enabled-rules.md) applies that same
+standard to `invocations` and to `astl.scope.enabled`.
 
-The rule ids, both taxonomies, and the `astl.scope` keys are part of the output
-contract: an id is never removed once published, and `internal/rules/ids.go` is
-the single table both taxonomies and the descriptions derive from. Tests assert
-that every reportable tag has a descriptor, that no rule appears as both
-supported and out of scope, and that the descriptions agree with `rules.md` row
+The rule ids, both taxonomies, and the `astl.scope` keys, `enabled` included,
+are part of the output contract: an id is never removed once published, and
+`internal/rules/ids.go` is the single table both taxonomies and the
+descriptions derive from. Adding a key to `astl.scope` or a field to an
+`invocations` entry is compatible; a key's meaning does not change once
+published. Tests assert that every reportable tag has a descriptor, that no
+rule appears as both supported and out of scope, and that the descriptions
+agree with `rules.md` row
 for row.
 
 The `outOfScope` list is maintained against a pinned ansible-lint version

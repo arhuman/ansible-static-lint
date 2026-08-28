@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -707,5 +708,89 @@ func TestIgnoreFileUnreadableLineExitsError(t *testing.T) {
 	}
 	if code != exitError {
 		t.Errorf("got exit %d, want %d", code, exitError)
+	}
+}
+
+// TestSARIFDeclaresTheWorkingDirectory is the integrator's case end to end: the
+// result paths stay relative, and the invocation says what they are relative
+// to, so a report copied elsewhere still resolves them.
+func TestSARIFDeclaresTheWorkingDirectory(t *testing.T) {
+	path := configuredRepo(t, dirtyPlaybook, "")
+	_, stdout, _ := runCLI(t, "-f", "sarif", path)
+
+	var doc struct {
+		Runs []struct {
+			Invocations []struct {
+				ExecutionSuccessful bool `json:"executionSuccessful"`
+				WorkingDirectory    struct {
+					URI string `json:"uri"`
+				} `json:"workingDirectory"`
+			} `json:"invocations"`
+			Results []struct {
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("sarif output is not JSON: %v\n%s", err, stdout)
+	}
+	if len(doc.Runs) != 1 || len(doc.Runs[0].Invocations) != 1 {
+		t.Fatalf("want one run with one invocation, got %+v", doc.Runs)
+	}
+	inv := doc.Runs[0].Invocations[0]
+	if !inv.ExecutionSuccessful {
+		t.Error("executionSuccessful is false on a run that produced a report")
+	}
+	// discover.WorkingDir resolves symlinks, which is what a macOS temporary
+	// directory needs, and is the same base the relative result paths were
+	// computed against.
+	want := "file://" + discover.WorkingDir() + "/"
+	if inv.WorkingDirectory.URI != want {
+		t.Errorf("workingDirectory uri = %q, want %q", inv.WorkingDirectory.URI, want)
+	}
+	if len(doc.Runs[0].Results) == 0 {
+		t.Fatal("no results to check the relative paths of")
+	}
+	for _, r := range doc.Runs[0].Results {
+		if got := r.Locations[0].PhysicalLocation.ArtifactLocation.URI; got != path {
+			t.Errorf("result uri = %q, want the relative %q", got, path)
+		}
+	}
+}
+
+// TestSARIFScopeFollowsTheConfig pins that the enabled list reports the run the
+// repository configured, not astl's defaults.
+func TestSARIFScopeFollowsTheConfig(t *testing.T) {
+	path := configuredRepo(t, dirtyPlaybook,
+		"skip_list:\n  - name\nenable_list:\n  - no-log-password\n")
+	_, stdout, _ := runCLI(t, "-f", "sarif", path)
+
+	var doc struct {
+		Runs []struct {
+			Properties struct {
+				Scope struct {
+					Enabled []string `json:"enabled"`
+				} `json:"astl.scope"`
+			} `json:"properties"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("sarif output is not JSON: %v\n%s", err, stdout)
+	}
+	if len(doc.Runs) != 1 {
+		t.Fatalf("want one run, got %d", len(doc.Runs))
+	}
+	enabled := doc.Runs[0].Properties.Scope.Enabled
+	if slices.Contains(enabled, "name") {
+		t.Errorf("skip_list rule still declared enabled: %v", enabled)
+	}
+	if !slices.Contains(enabled, "no-log-password") {
+		t.Errorf("enable_list rule not declared enabled: %v", enabled)
 	}
 }

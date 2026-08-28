@@ -190,3 +190,106 @@ func TestProfileChainsAreCumulative(t *testing.T) {
 		}
 	}
 }
+
+// TestEnabledRulesDefault pins the baseline a report declares with no config at
+// all: every implemented rule except the ones upstream ships opt-in.
+func TestEnabledRulesDefault(t *testing.T) {
+	got := EnabledRules(Selection{})
+	if len(got) != len(IDs)-len(optIn) {
+		t.Fatalf("enabled %d rules, want %d", len(got), len(IDs)-len(optIn))
+	}
+	for _, id := range got {
+		if optIn[id] {
+			t.Errorf("opt-in rule %q is enabled without being named", id)
+		}
+	}
+	// IDs order, because a consumer diffing two reports should see a rule move
+	// in or out of the list, not the whole list reshuffle.
+	if !slices.IsSortedFunc(got, func(a, b string) int {
+		return slices.Index(IDs, a) - slices.Index(IDs, b)
+	}) {
+		t.Errorf("enabled rules are not in IDs order: %v", got)
+	}
+}
+
+// TestEnabledRulesUnknownProfile mirrors inProfile's own rule: a name astl's
+// table predates must not silently mute the linter, so it restricts nothing.
+func TestEnabledRulesUnknownProfile(t *testing.T) {
+	got := EnabledRules(Selection{Profile: "hypersafety"})
+	if len(got) != len(IDs)-len(optIn) {
+		t.Fatalf("unknown profile enabled %d rules, want the default %d", len(got), len(IDs)-len(optIn))
+	}
+}
+
+// TestEnabledRulesProfileRestricts uses basic rather than min because min's
+// rules are all outside astl's scope, so it enables nothing and could not tell
+// a working restriction from a broken one.
+func TestEnabledRulesProfileRestricts(t *testing.T) {
+	got := EnabledRules(Selection{Profile: "basic"})
+	if len(got) == 0 || len(got) >= len(IDs)-len(optIn) {
+		t.Fatalf("profile basic enabled %d rules, want a strict subset of the default", len(got))
+	}
+	for _, id := range got {
+		if !inProfile("basic", id) {
+			t.Errorf("%q is enabled but not in profile basic", id)
+		}
+	}
+}
+
+// TestEnabledRulesEnableListAddsOptIn covers the one thing enable_list is for
+// beyond overriding a profile: switching on a rule that is otherwise never
+// registered.
+func TestEnabledRulesEnableListAddsOptIn(t *testing.T) {
+	if slices.Contains(EnabledRules(Selection{}), "no-log-password") {
+		t.Fatal("no-log-password is enabled by default, so this test proves nothing")
+	}
+	if !slices.Contains(EnabledRules(Selection{EnableList: []string{"no-log-password"}}), "no-log-password") {
+		t.Error("enable_list did not switch on an opt-in rule")
+	}
+	// A profile that does not list it must not undo the enable, the same way
+	// selects lets enable_list override the profile.
+	if !slices.Contains(EnabledRules(Selection{Profile: "min", EnableList: []string{"no-log-password"}}), "no-log-password") {
+		t.Error("a profile suppressed a rule enable_list named")
+	}
+}
+
+// TestEnabledRulesSkipBeatsEnable pins the resolution order, which is Select's:
+// Filter runs before anything else, so a rule in both lists is off.
+func TestEnabledRulesSkipBeatsEnable(t *testing.T) {
+	sel := Selection{EnableList: []string{"no-log-password", "name"}, SkipList: []string{"no-log-password", "name"}}
+	for _, id := range []string{"no-log-password", "name"} {
+		if slices.Contains(EnabledRules(sel), id) {
+			t.Errorf("%q is skipped and enabled, and came back enabled", id)
+		}
+	}
+}
+
+// TestEnabledRulesCanonicalizesIDs covers a config written in astl's own
+// taxonomy: the answer is the same set, and it is still spelled upstream.
+func TestEnabledRulesCanonicalizesIDs(t *testing.T) {
+	sel := Selection{
+		EnableList: []string{TagFor("no-log-password", IDNative)},
+		SkipList:   []string{TagFor("name", IDNative)},
+	}
+	got := EnabledRules(sel)
+	if !slices.Contains(got, "no-log-password") {
+		t.Error("a native enable_list id did not switch on its rule")
+	}
+	if slices.Contains(got, "name") {
+		t.Error("a native skip_list id did not switch off its rule")
+	}
+	for _, id := range got {
+		if Canonical(id) != id {
+			t.Errorf("enabled id %q is not an upstream id", id)
+		}
+	}
+}
+
+// TestEnabledRulesIgnoresWarnList pins that warn_list is a level, not a switch:
+// a demoted rule still runs and still reports.
+func TestEnabledRulesIgnoresWarnList(t *testing.T) {
+	got := EnabledRules(Selection{WarnList: []string{"name"}})
+	if !slices.Contains(got, "name") {
+		t.Error("warn_list removed a rule from the enabled set")
+	}
+}

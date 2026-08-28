@@ -206,7 +206,9 @@ identifier and the message wording, in pep8 and SARIF alike. The default is
 `--ids upstream`, which keeps the pep8 output byte for byte identical to
 ansible-lint's. The SARIF document is not held to that comparison and does not
 try to match upstream's own SARIF, for the reasons in
-[ADR 0007](docs/adr/0007-sarif-outside-the-compatibility-contract.md).
+[ADR 0007](docs/adr/0007-sarif-outside-the-compatibility-contract.md). It also
+declares its run's working directory and which rules were enabled for it; see
+[docs/sarif.md](docs/sarif.md).
 
 ```
 # default, ansible-lint's identifier and wording
