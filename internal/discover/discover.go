@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/arhuman/ansible-static-lint/internal/yamllint"
 )
 
 // Kind names used by the rules. Kinds outside this set are still assigned but
@@ -129,8 +131,10 @@ func looksLikeRole(dir string) bool {
 	return false
 }
 
-// Walk collects lintables under the given roots. excluded is a list of path
-// substrings; any path containing one is skipped.
+// Walk collects lintables under the given roots. excluded is a list of
+// gitignore-style patterns (ansible-lint hands exclude_paths to pathspec's
+// GitIgnoreSpec, issue 0013): an unanchored name matches at any depth, a
+// slash anchors to the working directory, `**` spans segments.
 //
 // A root that cannot be stat'ed is fatal and comes back as the error return.
 // Failures on individual entries below a root are collected in soft and the
@@ -147,7 +151,7 @@ func Walk(roots []string, excluded []string) (items []Item, soft []error, err er
 	// macOS makes /tmp and /var symlinks, so any run under a temporary
 	// directory has an unresolved working directory unless this happens.
 	wd = resolvePath(wd)
-	w := &walk{wd: wd, excluded: excluded, seen: map[string]bool{}}
+	w := &walk{wd: wd, excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{}}
 
 	for _, root := range roots {
 		absRoot, err := filepath.Abs(root)
@@ -172,7 +176,7 @@ func Walk(roots []string, excluded []string) (items []Item, soft []error, err er
 // entry.
 type walk struct {
 	wd       string
-	excluded []string
+	excluded *yamllint.PathSpec
 	seen     map[string]bool
 	items    []Item
 	soft     []error
@@ -184,7 +188,7 @@ func (w *walk) visit(p string, d fs.DirEntry, err error) error {
 		w.soft = append(w.soft, err)
 		return nil
 	}
-	if isExcluded(displayPath(w.wd, p), w.excluded) {
+	if w.excluded.Match(displayPath(w.wd, p)) {
 		if d.IsDir() {
 			return fs.SkipDir
 		}
@@ -327,15 +331,6 @@ func isRoleDir(dir string) bool {
 	}
 	grand := filepath.Base(filepath.Dir(filepath.Dir(dir)))
 	return grand == "roles" && !looksLikeRole(filepath.Dir(dir))
-}
-
-func isExcluded(path string, excluded []string) bool {
-	for _, e := range excluded {
-		if e != "" && strings.Contains(path, e) {
-			return true
-		}
-	}
-	return false
 }
 
 // resolvePath returns path with every symlink component resolved, or path

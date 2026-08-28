@@ -318,3 +318,42 @@ func TestWalkRoleNeedsARoleSubdir(t *testing.T) {
 		}
 	}
 }
+
+// TestWalkExcludeGlobs pins gitignore semantics for exclude_paths (issue
+// 0013, found on k3s-ansible): a `**` glob excludes at depth, and a plain
+// entry is a path name, not a substring, so it no longer over-matches files
+// that merely contain it.
+func TestWalkExcludeGlobs(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{"molecule/ipv6", "molecule/default"} {
+		if err := os.MkdirAll(filepath.Join(dir, p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"molecule/ipv6/prepare.yml", "molecule/default/prepare.yml", "molecule/ipv6/verify.yml", "venv.yml"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("---\n{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := Walk([]string{dir}, []string{"molecule/**/prepare.yml", "venv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, it := range items {
+		got[filepath.ToSlash(it.Path)] = true
+	}
+	for _, want := range []string{"molecule/ipv6/verify.yml", "venv.yml"} {
+		if !got[want] {
+			t.Errorf("%s missing: %v", want, got)
+		}
+	}
+	for _, not := range []string{"molecule/ipv6/prepare.yml", "molecule/default/prepare.yml"} {
+		if got[not] {
+			t.Errorf("%s not excluded", not)
+		}
+	}
+}

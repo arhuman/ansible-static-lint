@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arhuman/ansible-static-lint/internal/yamllint"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/arhuman/ansible-static-lint/internal/parse"
@@ -80,7 +82,7 @@ func ExpandIncludes(items []Item, excluded []string) []Item {
 	}
 	wd = resolvePath(wd)
 
-	e := &expander{wd: wd, excluded: excluded, seen: map[string]bool{}}
+	e := &expander{wd: wd, excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{}}
 	for _, it := range items {
 		e.seen[it.Abs+"\x00"+it.Kind] = true
 	}
@@ -103,7 +105,7 @@ const maxIncludeRounds = 32
 
 type expander struct {
 	wd       string
-	excluded []string
+	excluded *yamllint.PathSpec
 	seen     map[string]bool
 	added    []Item
 }
@@ -141,7 +143,7 @@ func (e *expander) admit(parent Item, t target) (Item, bool) {
 		return Item{}, false
 	}
 	path := displayPath(e.wd, abs)
-	if isExcluded(path, e.excluded) {
+	if e.excluded.Match(path) {
 		return Item{}, false
 	}
 	e.seen[key] = true
