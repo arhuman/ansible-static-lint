@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-28
+
 ### Added - 2026-08-28
 
 - `make release` now stamps the version pins in the adoption snippets
