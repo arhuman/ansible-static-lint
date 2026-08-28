@@ -30,7 +30,7 @@ collection resolution, schema validation and `--fix`.
 **Download the binary.** No Go, no Python, no Ansible:
 
 ```sh
-VERSION=0.4.0
+VERSION=0.5.0
 OS=$(uname -s | tr 'A-Z' 'a-z')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -sSfL "https://github.com/arhuman/ansible-static-lint/releases/download/v${VERSION}/ansible-static-lint_${VERSION}_${OS}_${ARCH}.tar.gz" | tar -xz astl
@@ -47,7 +47,7 @@ the binary for you:
 
 ```yaml
       - uses: actions/checkout@v7
-      - uses: arhuman/ansible-static-lint@v0.4.0
+      - uses: arhuman/ansible-static-lint@v0.5.0
 ```
 
 **As a pre-commit hook.** pre-commit installs astl in an isolated environment
@@ -59,7 +59,7 @@ cached binary.
 ```yaml
 repos:
   - repo: https://github.com/arhuman/ansible-static-lint
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: astl
 ```
