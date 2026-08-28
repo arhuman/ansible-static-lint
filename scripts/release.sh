@@ -7,10 +7,13 @@
 # last v* tag (feat -> minor, fix/other -> patch, ! or BREAKING CHANGE -> major,
 # capped to minor while still on 0.x), lets the caller confirm or override it,
 # runs the gate (`make ci` when a Makefile exists; customize this line otherwise,
-# e.g. `uv run pytest && uv run ruff check`), stamps CHANGELOG.md and, for a
+# e.g. `uv run pytest && uv run ruff check`), stamps CHANGELOG.md, the version
+# pins in $pin_files (adoption snippets that name the released tag) and, for a
 # Python package, the pyproject.toml `version` field (Go has no such manifest:
 # its version comes from the tag via ldflags at build time), then commits, tags
 # and pushes. Pushing the tag is what triggers .github/workflows/release.yml.
+# An executable scripts/release-preflight.sh, when present, runs with the
+# preconditions and can veto the release with project-specific checks.
 #
 # Invoked by the Makefile `release` target (`make release`) when one exists,
 # otherwise directly: `scripts/release.sh`.
@@ -18,6 +21,11 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 changelog="CHANGELOG.md"
+# Files whose adoption snippets pin the released version (`vX.Y.Z` and
+# `VERSION=X.Y.Z` spellings). Stamped from the previous tag to the new one in
+# the release commit; missing files are skipped. Keep the changelog out: its
+# past version headings are history, not pins.
+pin_files=(README.md .pre-commit-hooks.yaml action.yml docs/ci.md)
 
 die() { echo "release: $*" >&2; exit 1; }
 
@@ -26,6 +34,12 @@ die() { echo "release: $*" >&2; exit 1; }
 branch=$(git rev-parse --abbrev-ref HEAD)
 [ "$branch" = main ] || [ "$branch" = master ] || die "not on main/master (on $branch)"
 [ -f "$changelog" ] || die "$changelog not found"
+# Project-specific preconditions live in an optional hook, keeping this script
+# generic. astl's checks that the compatibility corpus the CI parity job
+# clones is pushed, since a green local gate cannot see a stale remote.
+if [ -x scripts/release-preflight.sh ]; then
+  ./scripts/release-preflight.sh || die "preflight failed"
+fi
 
 # --- last tag + bump detection ----------------------------------------------
 last=$(git tag --list 'v*' --sort=-v:refname | head -n1)
@@ -89,6 +103,21 @@ if [ -f "$pyproject" ]; then
   ' "$pyproject" > "$tmp" && mv "$tmp" "$pyproject"
   grep -qF "version = \"${version#v}\"" "$pyproject" || die "failed to stamp $pyproject (no 'version = \"...\"' line under [project]?)"
   git add "$pyproject"
+fi
+
+# --- stamp version pins ------------------------------------------------------
+# Rewrites the previous release's pins to the new version in $pin_files, both
+# the `vX.Y.Z` and the bare `VERSION=X.Y.Z` spellings. Exact-match on the last
+# tag, so surrounding prose and other version-like strings are untouched.
+if [ "$last" != "v0.0.0" ]; then
+  last_re=${last//./\\.}
+  for f in "${pin_files[@]}"; do
+    [ -f "$f" ] || continue
+    tmp=$(mktemp)
+    sed -e "s/${last_re}/${version}/g" \
+        -e "s/VERSION=${last_re#v}/VERSION=${version#v}/g" "$f" > "$tmp" && mv "$tmp" "$f"
+    git add "$f"
+  done
 fi
 
 # --- stamp CHANGELOG ---------------------------------------------------------

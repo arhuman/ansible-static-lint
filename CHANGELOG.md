@@ -8,6 +8,13 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Added - 2026-08-28
+
+- `make release` now stamps the version pins in the adoption snippets
+  (README, `.pre-commit-hooks.yaml`) as part of the release commit, and runs
+  `scripts/release-preflight.sh` first, which refuses to release while the
+  compatibility corpus the CI parity job clones is dirty or unpushed.
+
 ## [0.3.0] - 2026-08-28
 
 ### Fixed - 2026-08-28 (issues 0010, 0011, 0012, found on kubernetes-sigs/kubespray)
