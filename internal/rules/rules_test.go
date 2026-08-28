@@ -584,3 +584,36 @@ func TestNoqaAcceptsBothTaxonomies(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandInsteadOfShellChomping pins the block-scalar distinction
+// upstream's shell-character check makes (issue 0014, freeipa/ansible-freeipa):
+// a clip-chomped scalar (`>`) keeps its trailing newline, `\n` counts as a
+// shell feature, and the rule stays silent; the strip-chomped form (`>-`) and
+// a plain scalar are flagged. Verified against ansible-lint 26.8.0.
+func TestCommandInsteadOfShellChomping(t *testing.T) {
+	src := "---\n" +
+		"- name: P\n" +
+		"  hosts: all\n" +
+		"  tasks:\n" +
+		"    - name: Folded clip\n" +
+		"      ansible.builtin.shell: >\n" +
+		"        echo hi\n" +
+		"      changed_when: false\n" +
+		"    - name: Plain\n" +
+		"      ansible.builtin.shell: echo hi\n" +
+		"      changed_when: false\n" +
+		"    - name: Folded strip\n" +
+		"      ansible.builtin.shell: >-\n" +
+		"        echo hi\n" +
+		"      changed_when: false\n"
+	var lines []int
+	for _, f := range lintInlineFindings(t, "playbook.yml", src) {
+		if f.Tag == "command-instead-of-shell" {
+			lines = append(lines, f.Line)
+		}
+	}
+	want := []int{9, 12}
+	if len(lines) != len(want) || lines[0] != want[0] || lines[1] != want[1] {
+		t.Fatalf("flagged lines %v, want %v (clip-chomped scalar must stay silent)", lines, want)
+	}
+}
