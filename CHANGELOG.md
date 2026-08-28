@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
 ### Fixed - 2026-08-28 (issues 0010, 0011, 0012, found on kubernetes-sigs/kubespray)
 
 - A playbook whose first play is an `import_playbook` entry is now linted;
