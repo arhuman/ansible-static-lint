@@ -90,16 +90,28 @@ reach code scanning and the job still goes red. Drop either that input or the
 ```yaml
 repos:
   - repo: https://github.com/arhuman/ansible-static-lint
-    rev: v0.2.0
+    rev: v0.4.0
     hooks:
       - id: astl
 ```
 
-The hook builds astl from source at the pinned revision, so it needs a Go
-toolchain and no Python. It lints the whole repository rather than the staged
-files, because discovery decides a file's kind from its path and follows
-`include_tasks` from the files it is given, so a narrowed list changes what is
-reported. At tens of milliseconds there is nothing to gain by narrowing it.
+The hook builds astl from source at the pinned revision. With pre-commit 3.0
+or newer nothing needs installing beforehand: `language: golang` bootstraps
+the Go toolchain itself, compiles once, and reuses the cached binary.
+[prek](https://github.com/j178/prek), the Rust pre-commit reimplementation,
+runs the same hook declaration; verified against real repositories whose CI
+uses prek. The hook lints the whole repository rather than the staged files,
+because discovery decides a file's kind from its path and follows
+`include_tasks` from the files it is given, so a narrowed list changes what
+is reported. At tens of milliseconds there is nothing to gain by narrowing
+it.
+
+When the repository's CI runs ansible-lint through this same pre-commit
+configuration, do not swap the hook: move the full ansible-lint hook to
+`stages: [manual]`, add astl for the ordinary stages, and have CI invoke the
+manual stage explicitly (`pre-commit run ansible-lint --hook-stage manual
+--all-files`). Ordinary commits then pay only astl, CI runs both, and no
+out-of-scope rule is lost.
 
 With the binary already on PATH, skip the toolchain:
 
