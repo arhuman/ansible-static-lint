@@ -8,6 +8,21 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Added - 2026-08-29
+
+- The SARIF report records its invocation: `invocations[].workingDirectory`
+  carries the absolute file URI result paths are relative to, so a saved or
+  moved report still resolves them.
+- `astl.scope` gains an `enabled` list: the rules this run turned on after
+  applying the profile, `skip_list` and `enable_list`, distinct from
+  `supported` (implemented) and `outOfScope` (cannot run). ADR 0008.
+
+### Fixed - 2026-08-29 (issue 0014, found on freeipa)
+
+- A clip-chomped `shell` scalar keeps its trailing newline when its arguments
+  are joined, so `command-instead-of-shell` counts it as a shell feature the
+  way ansible-lint's `join_args` does.
+
 ## [0.4.0] - 2026-08-28
 
 ### Fixed - 2026-08-28 (issue 0013, found on timothystewart6/k3s-ansible)
