@@ -106,19 +106,62 @@ if [ -f "$pyproject" ]; then
 fi
 
 # --- stamp version pins ------------------------------------------------------
-# Rewrites the previous release's pins to the new version in $pin_files, both
-# the `vX.Y.Z` and the bare `VERSION=X.Y.Z` spellings. Exact-match on the last
-# tag, so surrounding prose and other version-like strings are untouched.
-if [ "$last" != "v0.0.0" ]; then
-  last_re=${last//./\\.}
+# Rewrites this project's own version pins in $pin_files to the new version,
+# in both the `vX.Y.Z` and the bare `VERSION=X.Y.Z` spellings.
+#
+# Matching is on the pin's shape, not on the previous tag: keying off $last
+# rewrote only pins that were exactly one release behind, so any pin that fell
+# further behind was skipped at every subsequent release and stayed frozen.
+# docs/ci.md sat at v0.2.0 through four releases that way. The shapes below are
+# anchored to this repository's own coordinates, so a version-like string
+# belonging to anything else (actions/checkout@v7, a Go version, prose) is not
+# a candidate.
+stamp_pins() {
+  local f tmp
   for f in "${pin_files[@]}"; do
     [ -f "$f" ] || continue
     tmp=$(mktemp)
-    sed -e "s/${last_re}/${version}/g" \
-        -e "s/VERSION=${last_re#v}/VERSION=${version#v}/g" "$f" > "$tmp" && mv "$tmp" "$f"
+    # `|` as the delimiter, not `#`: a `#` appears inside the commented-out
+    # `rev:` pattern below and would close the expression early.
+    sed -E \
+      -e "s|(ansible-static-lint@)v[0-9]+\.[0-9]+\.[0-9]+|\1${version}|g" \
+      -e "s|(arhuman/ansible-static-lint/releases/download/)v[0-9]+\.[0-9]+\.[0-9]+|\1${version}|g" \
+      -e "s|^([[:space:]]*(#[[:space:]]*)?rev:[[:space:]]*)v[0-9]+\.[0-9]+\.[0-9]+|\1${version}|g" \
+      -e "s|VERSION=[0-9]+\.[0-9]+\.[0-9]+|VERSION=${version#v}|g" \
+      -e "s|v[0-9]+\.[0-9]+\.[0-9]+([[:space:]]*# release-pin)|${version}\1|g" \
+      -e "s|(\\\$TAG = \")v[0-9]+\.[0-9]+\.[0-9]+|\1${version}|g" \
+      "$f" > "$tmp" && mv "$tmp" "$f"
     git add "$f"
   done
-fi
+}
+
+# A pin left at an older version is invisible in a release log, so the stamping
+# is verified rather than trusted: any remaining pin at a version that is not
+# the one being released vetoes the release.
+#
+# The audit covers the shapes stamp_pins knows, which is what guards against a
+# pin falling behind. It does not discover a new shape: add one here and in
+# stamp_pins together, or end the pinned line with `# release-pin`, which both
+# know. A PyPI pin (`ansible-static-lint==X.Y.Z`) is the likely next shape; the
+# README deliberately leaves those installs unpinned today.
+verify_pins() {
+  local f line stale=0
+  for f in "${pin_files[@]}"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r line; do
+      stale=1
+      echo "release: stale pin in $f: $line" >&2
+    done < <(grep -nE "(ansible-static-lint@|releases/download/|^[[:space:]]*#?[[:space:]]*rev:[[:space:]]*)v[0-9]+\.[0-9]+\.[0-9]+|VERSION=[0-9]+\.[0-9]+\.[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*# release-pin|\\\$TAG = \"v[0-9]+\.[0-9]+\.[0-9]+" "$f" \
+             | grep -vE "(@|/|rev:[[:space:]]*)${version//./\\.}([^0-9]|\$)" \
+             | grep -vE "VERSION=${version#v}([^0-9]|\$)" \
+             | grep -vE "${version//./\\.}[[:space:]]*# release-pin" \
+             | grep -vE "\\\$TAG = \"${version//./\\.}\"")
+  done
+  [ "$stale" -eq 0 ] || die "version pins not fully stamped to $version"
+}
+
+stamp_pins
+verify_pins
 
 # --- stamp CHANGELOG ---------------------------------------------------------
 # Promote the [Unreleased] section: keep an empty [Unreleased] on top and open

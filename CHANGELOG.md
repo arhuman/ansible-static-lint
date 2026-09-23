@@ -8,6 +8,13 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Fixed - 2026-10-19
+
+- The release script now stamps every version pin it owns, however far behind
+  it is, and refuses to release when one is left at another version. It used
+  to rewrite only pins matching the previous tag, so `docs/ci.md` stayed at
+  `@v0.2.0` through five releases.
+
 ### Changed - 2026-10-18
 
 - An invalid `loop_var_prefix` now fails the run at config load, as an invalid
