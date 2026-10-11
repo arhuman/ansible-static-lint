@@ -56,11 +56,14 @@ jobs:
       # `unexpected expr: *ast.KeyValueExpr`. This job runs `go-version:
       # stable`, so it is where that stdlib lands first. golangci-lint v2.13.1
       # is the first release bundling staticcheck v0.8.0; govulncheck v1.7.0
-      # carries an x/tools SSA builder new enough for the same reason. Neither
-      # is a routine bump: do not lower them to match an older Go.
+      # carries an x/tools SSA builder new enough for the same reason. The Go
+      # 1.27.2 stdlib then shipped export data version 5, which the x/tools v0.49.0
+      # in golangci-lint v2.13.x rejects at typecheck; v2.14.0 (x/tools
+      # v0.50.0) reads it. Neither is a routine bump: do not lower them to
+      # match an older Go.
       - name: Install pinned tools
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
       # make audit = coverage gate + go mod verify + golangci-lint + govulncheck.
       # One code path, local and CI.
