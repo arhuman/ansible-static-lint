@@ -31,13 +31,18 @@ linters:
       lines: 80
       statements: -1
     gocognit:
-      # Target 16. Worst offender: galaxyRules (internal/rules/meta.go) at 24,
-      # then taskSkipRanges 21, metaVideoLinks 19.
-      min-complexity: 25
+      # Flags a function above the value, so 15 passes and 16 fails. Target
+      # reached: 15. Worst offender: yamlFinding (internal/rules/yaml.go) at 15,
+      # then inlineMappingIsUnbreakable, moduleArgKeyNodes, metaNoTags and
+      # sanityRules at 14.
+      min-complexity: 15
     gocyclo:
-      # Target 11. Worst offender: galaxyRules (internal/rules/meta.go) at 20,
-      # then pyRepr 13, then splitArgs / resolveAction / newTask at 11.
-      min-complexity: 21
+      # Flags a function above the value, so 10 passes and 11 fails. Target
+      # reached: 10. Worst offenders at 10: buildFrom, scalarTruthy, metaNoTags,
+      # noFreeForm, compileIgnore, translateClass, checkCommentsIndentation,
+      # colonsRule.check, truthyRule.check. yamlFinding and the indentation
+      # rule's check keep their documented nolint exemptions.
+      min-complexity: 10
     nestif:
       min-complexity: 4
     staticcheck:
@@ -76,10 +81,14 @@ linters:
         path: internal/yamllint/
       # Test fixtures need traversable directories and, for the unreadable-path
       # tests, deliberately odd modes. Neither ships in the binary.
+      # Tests also skip the complexity gates: a table-driven test or a fuzz
+      # target branches on its cases, which is not the complexity they police.
       - path: _test\.go
         linters:
           - dupl
           - funlen
+          - gocognit
+          - gocyclo
           - gosec
 
 # `make audit` fails on an unformatted file rather than `make tidy` rewriting it
