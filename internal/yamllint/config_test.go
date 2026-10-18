@@ -117,7 +117,7 @@ func TestLoadRejectsBadConfig(t *testing.T) {
 
 // Limits the operator must know about are reported rather than swallowed.
 //
-// `ignore` used to be one of them and is no longer (issue 0006): the patterns
+// `ignore` used to be one of them and is no longer: the patterns
 // are applied now, so warning about them would be false. This test pins both
 // halves, because a warning that outlives the limitation it describes is worse
 // than no warning at all.

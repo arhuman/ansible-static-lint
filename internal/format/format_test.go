@@ -33,8 +33,8 @@ func TestTagMarkupLeak(t *testing.T) {
 	}
 }
 
-// TestMessageMarkupLeak is the message-side half of the same machine (astl
-// issue 0012, found on kubespray): a `[\w.]+` sequence inside the message is
+// TestMessageMarkupLeak is the message-side half of the same machine (found
+// on kubespray): a `[\w.]+` sequence inside the message is
 // an unknown tag too, and the template's final closer then pops it and prints
 // literally at end of line. A bracketed run holding a dash, as in var-naming's
 // regex message, is not a tag and leaves no artifact.

@@ -87,7 +87,7 @@ table reserves no row for it.
 
 - ~~Honoring a repository's own `.yamllint` override file.~~ **Reversed**: the
   check_repo rerun measured 8918 false positives
-  on debops without it, so it shipped as issue 0003's fix. `internal/yamllint`
+  on debops without it, so it shipped as a fix. `internal/yamllint`
   takes a `Config`, and a loader reproduces ansible-lint's resolution
   (search order, `extends: default`/`relaxed`, the `enable`/`disable`/bare
   `false` forms, and the default back-filling that makes a partial rule
@@ -107,8 +107,8 @@ table reserves no row for it.
 
 Everything below was verified empirically against the pinned reference
 versions, not inferred from documentation. These are the parity-critical
-facts the implementation must reproduce. The configuration-merge facts added
-by issue 0003 are in section 3.4.
+facts the implementation must reproduce. The configuration-merge facts are in
+section 3.4.
 
 ### 3.1 yaml[*]
 
@@ -216,7 +216,7 @@ Two consequences astl must adopt:
 Changing the sort key touches all existing rules; `make parity` on the frozen
 corpus is the gate proving the change is byte-neutral there.
 
-### 3.4 Configuration resolution (issue 0003)
+### 3.4 Configuration resolution
 
 Verified against ansible-lint's own `load_yamllint_config` on debops, okfde, a
 no-config baseline and four synthetic fixtures; the effective rule sets match

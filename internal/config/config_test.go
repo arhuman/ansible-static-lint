@@ -184,7 +184,7 @@ func TestLoadAcceptsAValidVarNamingPattern(t *testing.T) {
 	}
 }
 
-// TestLoadFindsEveryUpstreamFilename is the regression for issue 0007. astl
+// TestLoadFindsEveryUpstreamFilename is a regression test. astl
 // read only `.ansible-lint`, so a repository keeping its policy under any of
 // the other four names upstream accepts was linted with defaults: on
 // dell/omnia, whose config is `.config/ansible-lint.yml`, that was 607 false

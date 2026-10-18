@@ -206,7 +206,7 @@ func TestWalkSkipsDanglingSymlink(t *testing.T) {
 	}
 }
 
-// TestWalkReportsSymlinksUnderTheirTargetPath is issue 0002's regression test.
+// TestWalkReportsSymlinksUnderTheirTargetPath is a regression test.
 // ansible-lint resolves every path in Lintable.__init__ before anything reads
 // it, so the resolved path is what its findings print, what its kind globs
 // match, and what a rule sees when it looks at sibling files. debops makes all
@@ -282,7 +282,7 @@ func TestWalkKindFollowsTheSymlinkTarget(t *testing.T) {
 }
 
 // TestWalkRoleNeedsARoleSubdir pins upstream's _has_role_subdirs guard (their
-// #5079, astl issue 0011): a directory under roles/ that carries none of the
+// #5079): a directory under roles/ that carries none of the
 // five canonical role subdirectories is not a role, even when it holds nested
 // sub-roles, and those sub-roles are the role items instead. Found on
 // kubespray's roles/remove-node, a pure container for three sub-roles.

@@ -172,7 +172,7 @@ func looksLikePlaybook(root *yaml.Node) bool {
 		return false
 	}
 	// Mirrors upstream's _guess_kind: a first play holding only an
-	// import_playbook is still a playbook (astl issue 0010).
+	// import_playbook is still a playbook.
 	return MapHas(first, "hosts") || MapHas(first, "import_playbook") ||
 		MapHas(first, "ansible.builtin.import_playbook")
 }

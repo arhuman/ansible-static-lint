@@ -9,8 +9,7 @@ import (
 // The cases below cover the rule variants ansible-lint's own policy never
 // reaches (document-start, comments-indentation, forbidden flow collections,
 // strict anchors, YAML 1.2 truthy); each expectation was cross-checked
-// against the reference yamllint during the differential matrix run recorded
-// in issue 0003.
+// against the reference yamllint during a differential matrix run.
 func TestConfiguredRuleVariants(t *testing.T) {
 	base := func(mutate func(c *Config)) *Config {
 		c := AnsibleLintDefaults()

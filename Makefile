@@ -64,6 +64,8 @@ audit: cover
 	@which golangci-lint > /dev/null || $(MAKE) tools
 	@which govulncheck > /dev/null || $(MAKE) tools
 	go mod verify
+	@# .claude/ is not published, so an "issue 00NN" a reader cannot open.
+	@! git grep -nE 'issues? 0[0-9]{3}' -- ':!internal/yamlscan' || { echo "FAIL: reference to an unpublished issue" >&2; exit 1; }
 	golangci-lint run $(PKG)
 	govulncheck $(PKG)
 

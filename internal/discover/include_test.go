@@ -49,7 +49,7 @@ func expanded(t *testing.T, excluded ...string) map[string]string {
 	return out
 }
 
-// TestIncludedFileInheritsItsSection is the core of issue 0008, and the table
+// TestIncludedFileInheritsItsSection is the core of include expansion, and the table
 // is measured against ansible-lint 26.8.0 rather than reasoned about: an
 // include under `tasks:` or `handlers:` yields a child the task rules match,
 // and the same include under `pre_tasks:` or `post_tasks:` does not, because

@@ -361,7 +361,7 @@ func TestTaskRules(t *testing.T) {
 			want: nil,
 		},
 		{
-			// Issue 0001: no-handler anchors its finding on the when node,
+			// no-handler anchors its finding on the when node,
 			// not on the task's first line; the tag must still silence it.
 			name: "skip_ansible_lint silences a sub-node-anchored rule",
 			path: "playbooks/p.yml",
@@ -686,7 +686,7 @@ func TestNoqaAcceptsBothTaxonomies(t *testing.T) {
 }
 
 // TestCommandInsteadOfShellChomping pins the block-scalar distinction
-// upstream's shell-character check makes (issue 0014, freeipa/ansible-freeipa):
+// upstream's shell-character check makes (found on freeipa/ansible-freeipa):
 // a clip-chomped scalar (`>`) keeps its trailing newline, `\n` counts as a
 // shell feature, and the rule stays silent; the strip-chomped form (`>-`) and
 // a plain scalar are flagged. Verified against ansible-lint 26.8.0.

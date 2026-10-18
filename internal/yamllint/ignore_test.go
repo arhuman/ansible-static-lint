@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestIgnoreMatchesGitSemantics is the test that matters for issue 0006. The
+// TestIgnoreMatchesGitSemantics is the test that matters for `ignore`. The
 // patterns are git's, not filepath.Match's, and the two disagree exactly where
 // real ignore lists live: `test_*yml` must match at any depth, `roles/` must
 // swallow a subtree, and `*` must stop at a separator. Getting this wrong fails

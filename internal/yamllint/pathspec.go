@@ -3,8 +3,7 @@ package yamllint
 // PathSpec is a compiled gitignore-style pattern list, exported for callers
 // outside the yamllint pass. ansible-lint feeds `exclude_paths` to pathspec's
 // GitIgnoreSpec during discovery, the same class yamllint uses for `ignore:`,
-// so both features share one pattern language and astl shares one compiler
-// (issue 0013).
+// so both features share one pattern language and astl shares one compiler.
 type PathSpec struct {
 	spec *ignoreSpec
 }

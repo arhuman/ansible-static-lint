@@ -163,7 +163,7 @@ var builtinExcludes = []string{
 
 // Walk collects lintables under the given roots. excluded is a list of
 // gitignore-style patterns (ansible-lint hands exclude_paths to pathspec's
-// GitIgnoreSpec, issue 0013): an unanchored name matches at any depth, a
+// GitIgnoreSpec): an unanchored name matches at any depth, a
 // slash anchors to the working directory, `**` spans segments.
 //
 // Discovery also applies builtinExcludes and, for every directory it enters,
@@ -401,7 +401,7 @@ func hasRoleSubdirs(dir string) bool {
 // namespace-style folder rather than a role itself. Either way the candidate
 // must carry a canonical role subdirectory (upstream's _has_role_subdirs
 // guard, their #5079): a container directory holding only nested sub-roles is
-// not a role (astl issue 0011).
+// not a role.
 func isRoleDir(dir string) bool {
 	if !hasRoleSubdirs(dir) {
 		return false

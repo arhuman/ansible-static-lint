@@ -159,7 +159,7 @@ All notable changes to this project are documented here. Format:
   applying the profile, `skip_list` and `enable_list`, distinct from
   `supported` (implemented) and `outOfScope` (cannot run). ADR 0008.
 
-### Fixed - 2026-08-29 (issue 0014, found on freeipa)
+### Fixed - 2026-08-29 (found on freeipa)
 
 - A clip-chomped `shell` scalar keeps its trailing newline when its arguments
   are joined, so `command-instead-of-shell` counts it as a shell feature the
@@ -167,7 +167,7 @@ All notable changes to this project are documented here. Format:
 
 ## [0.4.0] - 2026-08-28
 
-### Fixed - 2026-08-28 (issue 0013, found on timothystewart6/k3s-ansible)
+### Fixed - 2026-08-28 (found on timothystewart6/k3s-ansible)
 
 - `exclude_paths` entries are matched with gitignore semantics, as
   ansible-lint does through pathspec: `**` globs now work, and a plain entry
@@ -182,7 +182,7 @@ All notable changes to this project are documented here. Format:
 
 ## [0.3.0] - 2026-08-28
 
-### Fixed - 2026-08-28 (issues 0010, 0011, 0012, found on kubernetes-sigs/kubespray)
+### Fixed - 2026-08-28 (found on kubernetes-sigs/kubespray)
 
 - A playbook whose first play is an `import_playbook` entry is now linted;
   it was previously skipped whole, later plays and their includes with it.

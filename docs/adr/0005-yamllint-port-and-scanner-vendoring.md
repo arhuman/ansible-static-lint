@@ -75,9 +75,9 @@ docs/design/static-yaml-and-var-naming.md.
 - A repository's own `.yamllint` is read and layered over the bundled policy,
   as ansible-lint does. This was deliberately deferred at first and reversed
   the same day: the check_repo rerun measured 8918 false positives on debops
-  without it (issue 0003). `ignore`/`ignore-from-file` were deferred in the
+  without it. `ignore`/`ignore-from-file` were deferred in the
   same way and reversed for the same reason once measured, at 4 false
-  positives on idealista/kafka_role (issue 0006); they are applied with git's
+  positives on idealista/kafka_role; they are applied with git's
   pattern semantics, scoped to the yaml family so that an ignored file is still
   linted by every other rule. Five yamllint rules stay unimplemented and are
   warned about on stderr rather than passed over silently.

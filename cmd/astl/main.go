@@ -310,7 +310,7 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 	}
 	// Files a playbook pulls in are lintables too, under the kind the including
 	// section gives them, so this has to happen before anything is sized or
-	// linted (issue 0008).
+	// linted.
 	items = append(items, discover.ExpandIncludes(items, cfg.ExcludePaths)...)
 
 	// Sized from the discovered input, so it must come after the walk.

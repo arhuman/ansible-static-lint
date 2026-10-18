@@ -435,7 +435,7 @@ func configuredRepo(t *testing.T, playbook, config string) string {
 	return "site-playbook.yml"
 }
 
-// TestConfigIsFoundUnderConfigDir is issue 0007 end to end, on the shape that
+// TestConfigIsFoundUnderConfigDir covers config discovery end to end, on the shape that
 // found it: dell/omnia keeps its policy at `.config/ansible-lint.yml` and no
 // `.ansible-lint`, so astl applied none of it.
 func TestConfigIsFoundUnderConfigDir(t *testing.T) {
@@ -494,7 +494,7 @@ func TestConfigFlagRejectsAMissingFile(t *testing.T) {
 	}
 }
 
-// TestWarnListPrintsAndPasses is issue 0004 end to end, and the exit code is
+// TestWarnListPrintsAndPasses covers warn_list end to end, and the exit code is
 // the half that matters: astl used to fail a build whose own CI was green.
 // Upstream reports `Passed: 0 failure(s), 1 warning(s)` on this shape.
 func TestWarnListPrintsAndPasses(t *testing.T) {
@@ -523,7 +523,7 @@ func TestWarnListLeavesOtherRulesFailing(t *testing.T) {
 	}
 }
 
-// TestProfileDropsRulesOutsideIt is issue 0005 end to end.
+// TestProfileDropsRulesOutsideIt covers profile selection end to end.
 func TestProfileDropsRulesOutsideIt(t *testing.T) {
 	path := configuredRepo(t, runOncePlaybook, "profile: production\n")
 

@@ -425,7 +425,7 @@ func joinArgs(parts []string) string {
 	}
 	// No trim: ansible's join_args keeps the trailing newline a clip-chomped
 	// block scalar carries, and command-instead-of-shell's shell-character
-	// check depends on seeing it (issue 0014).
+	// check depends on seeing it.
 	return b.String()
 }
 

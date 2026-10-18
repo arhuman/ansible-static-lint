@@ -66,7 +66,7 @@ func mayBeScanned(kind string) bool {
 // overrides it for any file a playbook pulls in: the child inherits the section
 // it was included from. astl classified by path alone, so on dell/omnia, whose
 // task lists sit under `playbooks/`, 78 `key-order[task]` and 2
-// `risky-shell-pipe` findings were missed (issue 0008).
+// `risky-shell-pipe` findings were missed.
 //
 // The returned items are additions, not replacements. A file reached both by
 // the walk and through an include is linted under both kinds, as upstream does,

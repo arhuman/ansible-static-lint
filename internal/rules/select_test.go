@@ -18,7 +18,7 @@ func tags(findings []Finding) []string {
 	return out
 }
 
-// TestSelectProfileDropsRulesOutsideIt is issue 0005's regression test. The
+// TestSelectProfileDropsRulesOutsideIt is a regression test. The
 // exact case is insippo/proxmox-infra: `profile: production` in .ansible-lint,
 // two run_once post_tasks, upstream silent because run-once belongs to no
 // profile, astl reporting both until this landed.
@@ -107,7 +107,7 @@ func TestSelectSkipListBeatsEnableList(t *testing.T) {
 	}
 }
 
-// TestSelectWarnListDemotesRatherThanDrops is issue 0004's regression test.
+// TestSelectWarnListDemotesRatherThanDrops is a regression test.
 // The distinction is the whole point of the key: a repository uses warn_list
 // precisely to keep seeing a finding without failing on it, so dropping it
 // would be as wrong as failing.
