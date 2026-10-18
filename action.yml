@@ -62,7 +62,9 @@ runs:
       shell: bash
       env:
         ASTL_VERSION: ${{ inputs.version }}
-      run: |
+      # GITHUB_PATH receives a directory this step creates under RUNNER_TEMP,
+      # never a caller-supplied value.
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
 
         # goreleaser ships Windows as .zip with an .exe inside, every other
@@ -112,8 +114,8 @@ runs:
         # This catches a truncated or corrupted download. It is not a
         # supply-chain guarantee: checksums.txt travels from the same release as
         # the archive, so a tampered release would carry a matching sum. For
-        # that, verify checksums.txt.sig against its certificate with cosign;
-        # docs/supply-chain.md has the command.
+        # that, verify checksums.txt against checksums.txt.sigstore.json with
+        # cosign; docs/supply-chain.md has the command.
         if command -v sha256sum >/dev/null 2>&1; then sum=(sha256sum); else sum=(shasum -a 256); fi
         (cd "$dir" && grep " ${archive}\$" checksums.txt | "${sum[@]}" -c -)
 

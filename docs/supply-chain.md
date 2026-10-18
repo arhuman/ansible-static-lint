@@ -25,8 +25,9 @@ Each archive also ships an SBOM alongside it as
 `<archive>.sbom.json`.
 
 The GitHub Action downloads a release binary and checks it against these
-published checksums, so a workflow using the action inherits the same guarantee
-without running cosign itself.
+published checksums. That catches a corrupted download but not a tampered
+release: the action does not run cosign, so provenance needs the bundle check
+above.
 
 ## Homebrew cask
 
