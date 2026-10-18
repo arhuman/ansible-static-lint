@@ -26,7 +26,8 @@ type Options struct {
 	// also overrides the profile; see Select.
 	EnableList []string
 	// LoopVarPrefix is the regexp a role's `loop_var` must match. Empty leaves
-	// the loop-var-prefix rule inert, as upstream does.
+	// the loop-var-prefix rule inert, as upstream does. config.Load validates
+	// it; an invalid one reaching the rule leaves the rule inert too.
 	LoopVarPrefix string
 	// MaxTasks caps the tasks in a play or task file. Zero means the default.
 	MaxTasks int

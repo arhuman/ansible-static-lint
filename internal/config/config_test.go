@@ -184,6 +184,34 @@ func TestLoadAcceptsAValidVarNamingPattern(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsAnInvalidLoopVarPrefix pins that an uncompilable
+// loop_var_prefix fails the load instead of silently disabling its rule. RE2
+// lacks Python's lookaround, so `^(?!bad)` is the realistic case.
+func TestLoadRejectsAnInvalidLoopVarPrefix(t *testing.T) {
+	for _, pattern := range []string{`^(?!bad)`, `^[a-z`} {
+		t.Run(pattern, func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, dir, "loop_var_prefix: '"+pattern+"'\n")
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatal("an invalid regexp must be rejected")
+			}
+			if !strings.Contains(err.Error(), "loop_var_prefix") {
+				t.Errorf("error %q does not name the setting at fault", err)
+			}
+		})
+	}
+}
+
+// TestLoadAcceptsAValidLoopVarPrefix covers upstream's documented default,
+// whose `{role}` placeholder is only substituted per file.
+func TestLoadAcceptsAValidLoopVarPrefix(t *testing.T) {
+	c := load(t, "loop_var_prefix: '^(__|{role}_)'\n")
+	if c.LoopVarPrefix != "^(__|{role}_)" {
+		t.Fatalf("loop_var_prefix = %q", c.LoopVarPrefix)
+	}
+}
+
 // TestLoadFindsEveryUpstreamFilename is a regression test. astl
 // read only `.ansible-lint`, so a repository keeping its policy under any of
 // the other four names upstream accepts was linted with defaults: on

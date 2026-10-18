@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/arhuman/ansible-static-lint/internal/rules"
 	"github.com/arhuman/ansible-static-lint/internal/safeio"
 )
 
@@ -86,6 +87,11 @@ func LoadFile(path string) (Config, error) {
 	if c.VarNamingPattern != "" {
 		if _, err := regexp.Compile(c.VarNamingPattern); err != nil {
 			return c, fmt.Errorf("config: var_naming_pattern: %w", err)
+		}
+	}
+	if c.LoopVarPrefix != "" {
+		if _, err := rules.CompileLoopVarPrefix(c.LoopVarPrefix, "role"); err != nil {
+			return c, fmt.Errorf("config: loop_var_prefix: %w", err)
 		}
 	}
 	return c, nil

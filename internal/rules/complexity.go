@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -85,13 +86,28 @@ func newLoopVarPrefix(f *parse.File, opt Options) *loopVarPrefix {
 		return nil
 	}
 	role := reToIdentifier.ReplaceAllString(f.Role, "_")
-	// Anchoring reproduces Python's re.match, which only ever matches at the
-	// start of the variable name.
-	re, err := regexp.Compile(`\A(?:` + strings.ReplaceAll(opt.LoopVarPrefix, "{role}", role) + `)`)
+	key := opt.LoopVarPrefix + "\x00" + role
+	if re, ok := loopVarPrefixes.Load(key); ok {
+		return &loopVarPrefix{re: re.(*regexp.Regexp), pattern: opt.LoopVarPrefix, role: role}
+	}
+	re, err := CompileLoopVarPrefix(opt.LoopVarPrefix, role)
 	if err != nil {
 		return nil
 	}
-	return &loopVarPrefix{re: re, pattern: opt.LoopVarPrefix, role: role}
+	cached, _ := loopVarPrefixes.LoadOrStore(key, re)
+	return &loopVarPrefix{re: cached.(*regexp.Regexp), pattern: opt.LoopVarPrefix, role: role}
+}
+
+// loopVarPrefixes memoizes compiled patterns by pattern and role, since every
+// file of a role compiles the same one.
+var loopVarPrefixes sync.Map
+
+// CompileLoopVarPrefix compiles a `loop_var_prefix` pattern for one role, the
+// way the loop-var-prefix rule matches it: `{role}` replaced by the role name,
+// anchored at the start like Python's re.match. config.Load calls it to reject
+// a pattern the rule could not use, so the two cannot disagree.
+func CompileLoopVarPrefix(pattern, role string) (*regexp.Regexp, error) {
+	return regexp.Compile(`\A(?:` + strings.ReplaceAll(pattern, "{role}", role) + `)`)
 }
 
 func (p *loopVarPrefix) check(f *parse.File, t *parse.Task) []Finding {

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Changed - 2026-10-18
+
+- An invalid `loop_var_prefix` now fails the run at config load, as an invalid
+  `var_naming_pattern` already did, instead of silently disabling
+  loop-var-prefix. Patterns using Python-only syntax such as lookahead are
+  rejected this way.
+
 ### Fixed - 2026-10-18
 
 - An include or import resolving outside the working directory is no longer
