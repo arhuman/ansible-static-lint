@@ -23,26 +23,41 @@ func (r *commentsRule) check(buf []rune, c comment) []Problem {
 			Args: []any{r.minSpacesFromContent},
 		})
 	}
-
-	if !r.requireStartingSpace {
-		return out
+	if r.requireStartingSpace {
+		if p, ok := r.missingStartingSpace(buf, c); ok {
+			out = append(out, p)
+		}
 	}
+	return out
+}
+
+// missingStartingSpace reports a comment whose text, past its run of `#`,
+// does not start with a space. A shebang on the first line may be exempt.
+func (r *commentsRule) missingStartingSpace(buf []rune, c comment) (Problem, bool) {
+	textStart := commentTextStart(buf, c)
+	if textStart >= len(buf) {
+		return Problem{}, false
+	}
+	if r.ignoreShebangs && c.lineNo == 1 && c.columnNo == 1 && buf[textStart] == '!' {
+		return Problem{}, false
+	}
+	if r := buf[textStart]; r == ' ' || r == '\n' || r == '\r' {
+		return Problem{}, false
+	}
+	return Problem{
+		Line: c.lineNo, Column: c.columnNo + textStart - c.pointer,
+		Desc: "missing starting space in comment",
+	}, true
+}
+
+// commentTextStart returns where the comment's text begins, past its run of
+// `#`.
+func commentTextStart(buf []rune, c comment) int {
 	textStart := c.pointer + 1
 	for textStart < len(buf) && buf[textStart] == '#' {
 		textStart++
 	}
-	if textStart < len(buf) {
-		if r.ignoreShebangs && c.lineNo == 1 && c.columnNo == 1 && buf[textStart] == '!' {
-			return out
-		}
-		if r := buf[textStart]; r != ' ' && r != '\n' && r != '\r' {
-			out = append(out, Problem{
-				Line: c.lineNo, Column: c.columnNo + textStart - c.pointer,
-				Desc: "missing starting space in comment",
-			})
-		}
-	}
-	return out
+	return textStart
 }
 
 // checkCommentsIndentation is yamllint's comments-indentation, which has no

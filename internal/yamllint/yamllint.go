@@ -8,6 +8,7 @@ package yamllint
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -115,17 +116,10 @@ func (c comment) isInline(buf []rune) bool {
 // next being nil after the last one. Only whitespace and comments can sit
 // there. Yielding through a callback keeps the pass allocation-free.
 func forEachCommentBetween(buf []rune, curr, next *yamlscan.Token, yield func(comment)) {
-	var to int
-	switch {
-	case next == nil:
-		to = len(buf)
-	case curr.End.Line == next.Start.Line &&
-		curr.Kind != yamlscan.StreamStart && next.Kind != yamlscan.StreamEnd:
+	to, ok := commentGapEnd(buf, curr, next)
+	if !ok {
 		return
-	default:
-		to = next.Start.Pointer
 	}
-
 	lineNo := curr.End.Line + 1
 	columnNo := curr.End.Column + 1
 	pointer := curr.End.Pointer
@@ -133,38 +127,53 @@ func forEachCommentBetween(buf []rune, curr, next *yamlscan.Token, yield func(co
 	prevValid := false
 	for pointer <= to {
 		lineEnd := to
-		for i := pointer; i < to; i++ {
-			if buf[i] == '\n' {
-				lineEnd = i
-				break
-			}
+		if i := slices.Index(buf[pointer:to], '\n'); i >= 0 {
+			lineEnd = pointer + i
 		}
-		for i := pointer; i < lineEnd; i++ {
-			if buf[i] == '#' {
-				c := comment{
-					lineNo: lineNo, columnNo: columnNo + (i - pointer), pointer: i,
-					beforeKind: curr.Kind, beforeStart: curr.Start, beforeEnd: curr.End,
-				}
-				if next != nil {
-					c.afterValid = true
-					c.afterKind = next.Kind
-					c.afterStart = next.Start
-				}
-				if prevValid {
-					c.prevValid = true
-					c.prevInline = prev.isInline(buf)
-					c.prevColumnNo = prev.columnNo
-				}
-				yield(c)
-				prev = c
-				prevValid = true
-				break
+		if i := slices.Index(buf[pointer:lineEnd], '#'); i >= 0 {
+			c := newComment(curr, next, lineNo, columnNo+i, pointer+i)
+			if prevValid {
+				c.prevValid = true
+				c.prevInline = prev.isInline(buf)
+				c.prevColumnNo = prev.columnNo
 			}
+			yield(c)
+			prev = c
+			prevValid = true
 		}
 		pointer = lineEnd + 1
 		lineNo++
 		columnNo = 1
 	}
+}
+
+// commentGapEnd returns the end of the gap between curr and next that can
+// hold comments. ok is false when the two share a line, which leaves none.
+func commentGapEnd(buf []rune, curr, next *yamlscan.Token) (to int, ok bool) {
+	switch {
+	case next == nil:
+		return len(buf), true
+	case curr.End.Line == next.Start.Line &&
+		curr.Kind != yamlscan.StreamStart && next.Kind != yamlscan.StreamEnd:
+		return 0, false
+	default:
+		return next.Start.Pointer, true
+	}
+}
+
+// newComment is the comment starting at pointer in the gap between curr and
+// next, with no link yet to the comment before it.
+func newComment(curr, next *yamlscan.Token, lineNo, columnNo, pointer int) comment {
+	c := comment{
+		lineNo: lineNo, columnNo: columnNo, pointer: pointer,
+		beforeKind: curr.Kind, beforeStart: curr.Start, beforeEnd: curr.End,
+	}
+	if next != nil {
+		c.afterValid = true
+		c.afterKind = next.Kind
+		c.afterStart = next.Start
+	}
+	return c
 }
 
 // token is one scanner token with its neighbors, mirroring yamllint's Token
@@ -308,16 +317,16 @@ func (ln *linter) addLineRules(cfg *Config) {
 	addLine("trailing-spaces", func() lineRule { return trailingSpacesRule{} })
 }
 
-// cosmeticProblems drives the streaming pass in yamllint's generator order:
-// each token, then the comments trailing it, with lines interleaved strictly
-// by line number (tokens and comments first on ties). Tokens live in a
-// four-slot ring covering exactly the prev/curr/next/nextnext window the
-// rules see, so the stream is never materialized.
 // linterPool recycles linters between files of the same run. A pooled linter
 // is only reusable under the configuration it was built for; a mismatch (only
 // possible if two configurations were ever live at once) builds a fresh one.
 var linterPool sync.Pool
 
+// cosmeticProblems drives the streaming pass in yamllint's generator order:
+// each token, then the comments trailing it, with lines interleaved strictly
+// by line number (tokens and comments first on ties). Tokens live in a
+// four-slot ring covering exactly the prev/curr/next/nextnext window the
+// rules see, so the stream is never materialized.
 func cosmeticProblems(text string, buf []rune, cfg *Config) []Problem {
 	ln, _ := linterPool.Get().(*linter)
 	if ln == nil || ln.cfg != cfg {
@@ -340,35 +349,14 @@ func cosmeticProblems(text string, buf []rune, cfg *Config) []Problem {
 
 	sc := yamlscan.NewScanner(text)
 	defer sc.Close()
-	var ring [4]yamlscan.Token
-	loaded, eof := 0, false
-	fetch := func() {
-		if !eof && sc.Next(&ring[loaded%4]) {
-			loaded++
-		} else {
-			eof = true
-		}
-	}
-	for loaded < 3 && !eof {
-		fetch()
-	}
+	ring := tokenRing{sc: sc}
+	ring.fill(2)
 	var elem token
-	for i := 0; i < loaded; i++ {
+	for i := 0; i < ring.loaded; i++ {
 		// Top up the lookahead; token i+3 would overwrite slot (i-1)%4, the
 		// prev still in use, so the window stops at i+2.
-		for loaded <= i+2 && !eof {
-			fetch()
-		}
-		elem = token{lineNo: ring[i%4].Start.Line + 1, curr: &ring[i%4]}
-		if i > 0 {
-			elem.prev = &ring[(i-1)%4]
-		}
-		if i+1 < loaded {
-			elem.next = &ring[(i+1)%4]
-		}
-		if i+2 < loaded {
-			elem.nextnext = &ring[(i+2)%4]
-		}
+		ring.fill(i + 2)
+		elem = ring.window(i)
 		flushLinesBefore(elem.lineNo)
 		ln.onToken(buf, &elem)
 		forEachCommentBetween(buf, elem.curr, elem.next, onComment)
@@ -381,6 +369,40 @@ func cosmeticProblems(text string, buf []rune, cfg *Config) []Problem {
 	ln.out = nil
 	linterPool.Put(ln)
 	return out
+}
+
+// tokenRing is the four-slot token window cosmeticProblems streams through.
+type tokenRing struct {
+	sc     *yamlscan.Scanner
+	slots  [4]yamlscan.Token
+	loaded int
+	eof    bool
+}
+
+// fill scans ahead until token i is loaded or the stream ends.
+func (r *tokenRing) fill(i int) {
+	for r.loaded <= i && !r.eof {
+		if r.sc.Next(&r.slots[r.loaded%4]) {
+			r.loaded++
+		} else {
+			r.eof = true
+		}
+	}
+}
+
+// window is token i with whichever of its neighbors are loaded.
+func (r *tokenRing) window(i int) token {
+	t := token{lineNo: r.slots[i%4].Start.Line + 1, curr: &r.slots[i%4]}
+	if i > 0 {
+		t.prev = &r.slots[(i-1)%4]
+	}
+	if i+1 < r.loaded {
+		t.next = &r.slots[(i+1)%4]
+	}
+	if i+2 < r.loaded {
+		t.nextnext = &r.slots[(i+2)%4]
+	}
+	return t
 }
 
 // reset returns a pooled linter to its start-of-file state. The result slice

@@ -46,35 +46,50 @@ func (r *anchorsRule) check(_ []rune, t *token) []Problem {
 		r.reset()
 	}
 
-	var out []Problem
-	switch {
-	case r.forbidUndeclaredAliases && c.Kind == yamlscan.Alias && r.anchors[c.Value] == nil:
-		out = append(out, anchorProblem(c, "found undeclared alias"))
-	case r.forbidDuplicatedAnchors && c.Kind == yamlscan.Anchor && r.anchors[c.Value] != nil:
-		out = append(out, anchorProblem(c, "found duplicated anchor"))
-	}
+	out := r.misuse(c)
 	if r.forbidUnusedAnchors {
-		switch {
-		case is(t.next, yamlscan.StreamEnd, yamlscan.DocumentStart, yamlscan.DocumentEnd):
-			for _, name := range r.order {
-				if info := r.anchors[name]; info != nil && !info.used {
-					out = append(out, Problem{
-						Line: info.line + 1, Column: info.column + 1,
-						Desc: `found unused anchor "` + name + `"`, Args: []any{name},
-					})
-				}
-			}
-		case c.Kind == yamlscan.Alias:
-			if info := r.anchors[c.Value]; info != nil {
-				info.used = true
-			}
-		}
+		out = append(out, r.unused(t)...)
 	}
 	if c.Kind == yamlscan.Anchor {
 		if r.anchors[c.Value] == nil {
 			r.order = append(r.order, c.Value)
 		}
 		r.anchors[c.Value] = &anchorInfo{line: c.Start.Line, column: c.Start.Column}
+	}
+	return out
+}
+
+// misuse reports an alias to an anchor not yet declared, or an anchor
+// declared twice, each when the configuration forbids it.
+func (r *anchorsRule) misuse(c *yamlscan.Token) []Problem {
+	switch {
+	case r.forbidUndeclaredAliases && c.Kind == yamlscan.Alias && r.anchors[c.Value] == nil:
+		return []Problem{anchorProblem(c, "found undeclared alias")}
+	case r.forbidDuplicatedAnchors && c.Kind == yamlscan.Anchor && r.anchors[c.Value] != nil:
+		return []Problem{anchorProblem(c, "found duplicated anchor")}
+	}
+	return nil
+}
+
+// unused marks the anchor an alias uses and, at the end of a document,
+// reports every anchor no alias used, in declaration order.
+func (r *anchorsRule) unused(t *token) []Problem {
+	c := t.curr
+	var out []Problem
+	switch {
+	case is(t.next, yamlscan.StreamEnd, yamlscan.DocumentStart, yamlscan.DocumentEnd):
+		for _, name := range r.order {
+			if info := r.anchors[name]; info != nil && !info.used {
+				out = append(out, Problem{
+					Line: info.line + 1, Column: info.column + 1,
+					Desc: `found unused anchor "` + name + `"`, Args: []any{name},
+				})
+			}
+		}
+	case c.Kind == yamlscan.Alias:
+		if info := r.anchors[c.Value]; info != nil {
+			info.used = true
+		}
 	}
 	return out
 }
@@ -142,20 +157,29 @@ func (r *flowPairRule) check(buf []rune, t *token) []Problem {
 	switch {
 	case r.forbids(empty) && c.Kind == r.start:
 		return []Problem{{Line: c.Start.Line + 1, Column: c.End.Column + 1, Desc: r.forbidDesc}}
-	case c.Kind == r.start && empty:
-		if p := spacesAfter(c, t.next, r.minEmpty, r.maxEmpty, r.tooFewEmp, r.tooManyEmp); p != nil {
-			return []Problem{*p}
-		}
 	case c.Kind == r.start:
-		if p := spacesAfter(c, t.next, r.minInside, r.maxInside, r.tooFew, r.tooMany); p != nil {
-			return []Problem{*p}
-		}
+		return problemList(r.spacesInsideStart(c, t.next, empty))
 	case c.Kind == r.end && (t.prev == nil || t.prev.Kind != r.start):
-		if p := spacesBefore(buf, c, t.prev, r.minInside, r.maxInside, r.tooFew, r.tooMany); p != nil {
-			return []Problem{*p}
-		}
+		return problemList(spacesBefore(buf, c, t.prev, r.minInside, r.maxInside, r.tooFew, r.tooMany))
 	}
 	return nil
+}
+
+// spacesInsideStart checks the spaces after an opening token, against the
+// empty-collection bounds when the collection is empty.
+func (r *flowPairRule) spacesInsideStart(c, next *yamlscan.Token, empty bool) *Problem {
+	if empty {
+		return spacesAfter(c, next, r.minEmpty, r.maxEmpty, r.tooFewEmp, r.tooManyEmp)
+	}
+	return spacesAfter(c, next, r.minInside, r.maxInside, r.tooFew, r.tooMany)
+}
+
+// problemList wraps an optional problem as the slice a rule returns.
+func problemList(p *Problem) []Problem {
+	if p == nil {
+		return nil
+	}
+	return []Problem{*p}
 }
 
 // forbids reports whether the `forbid` option rejects this flow collection:
@@ -299,19 +323,25 @@ func (r *octalValuesRule) check(_ []rune, t *token) []Problem {
 		return nil
 	}
 	val := c.Value
+	desc, ok := r.forbidden(val)
+	if !ok {
+		return nil
+	}
+	return []Problem{{
+		Line: c.Start.Line + 1, Column: c.End.Column + 1,
+		Desc: desc, Args: []any{val},
+	}}
+}
+
+// forbidden describes val when it is an octal form the configuration forbids.
+func (r *octalValuesRule) forbidden(val string) (desc string, ok bool) {
 	if r.forbidImplicit && len(val) > 1 && val[0] == '0' && isOctalDigits(val[1:]) {
-		return []Problem{{
-			Line: c.Start.Line + 1, Column: c.End.Column + 1,
-			Desc: `forbidden implicit octal value "` + val + `"`, Args: []any{val},
-		}}
+		return `forbidden implicit octal value "` + val + `"`, true
 	}
 	if r.forbidExplicit && len(val) > 2 && val[:2] == "0o" && isOctalDigits(val[2:]) {
-		return []Problem{{
-			Line: c.Start.Line + 1, Column: c.End.Column + 1,
-			Desc: `forbidden explicit octal value "` + val + `"`, Args: []any{val},
-		}}
+		return `forbidden explicit octal value "` + val + `"`, true
 	}
-	return nil
+	return "", false
 }
 
 // keyDuplicatesRule is yamllint's key-duplicates.
@@ -343,19 +373,25 @@ func (r *keyDuplicatesRule) check(_ []rune, t *token) []Problem {
 			r.stack = r.stack[:len(r.stack)-1]
 		}
 	case yamlscan.Key:
-		next := t.next
-		if next == nil || next.Kind != yamlscan.Scalar || len(r.stack) == 0 || !r.stack[len(r.stack)-1].isMap {
-			return nil
-		}
-		top := &r.stack[len(r.stack)-1]
-		if slices.Contains(top.keys, next.Value) && (next.Value != "<<" || r.forbidDuplicatedMergeKeys) {
-			return []Problem{{
-				Line: next.Start.Line + 1, Column: next.Start.Column + 1,
-				Desc: `duplication of key "` + next.Value + `" in mapping`, Args: []any{next.Value},
-			}}
-		}
-		top.keys = append(top.keys, next.Value)
+		return r.checkKey(t.next)
 	}
+	return nil
+}
+
+// checkKey records the scalar key that follows a Key token in the enclosing
+// mapping, reporting it when that mapping already holds it.
+func (r *keyDuplicatesRule) checkKey(next *yamlscan.Token) []Problem {
+	if next == nil || next.Kind != yamlscan.Scalar || len(r.stack) == 0 || !r.stack[len(r.stack)-1].isMap {
+		return nil
+	}
+	top := &r.stack[len(r.stack)-1]
+	if slices.Contains(top.keys, next.Value) && (next.Value != "<<" || r.forbidDuplicatedMergeKeys) {
+		return []Problem{{
+			Line: next.Start.Line + 1, Column: next.Start.Column + 1,
+			Desc: `duplication of key "` + next.Value + `" in mapping`, Args: []any{next.Value},
+		}}
+	}
+	top.keys = append(top.keys, next.Value)
 	return nil
 }
 
@@ -429,8 +465,9 @@ func (r *truthyRule) resetState() {
 	r.badValues = r.bad11
 }
 
-func (r *truthyRule) check(_ []rune, t *token) []Problem {
-	c := t.curr
+// followDirectives switches the truthy set on a %YAML directive and back to
+// YAML 1.1 at the end of the document it governs.
+func (r *truthyRule) followDirectives(c *yamlscan.Token) {
 	switch c.Kind {
 	case yamlscan.VersionDirective:
 		r.seenDirective = true
@@ -445,6 +482,11 @@ func (r *truthyRule) check(_ []rune, t *token) []Problem {
 		r.specVersion12 = false
 		r.badValues = r.bad11
 	}
+}
+
+func (r *truthyRule) check(_ []rune, t *token) []Problem {
+	c := t.curr
+	r.followDirectives(c)
 
 	if t.prev != nil && t.prev.Kind == yamlscan.Tag {
 		return nil

@@ -101,6 +101,16 @@ func compileIgnore(line string) (ignorePattern, bool) {
 		return ignorePattern{}, false
 	}
 
+	re, err := regexp.Compile(ignoreRegexp(line, anchored, dirOnly))
+	if err != nil {
+		return ignorePattern{}, false
+	}
+	return ignorePattern{re: re, negate: negate}, true
+}
+
+// ignoreRegexp translates a pattern already stripped of its negation, leading
+// and trailing slash into the regular expression that matches it.
+func ignoreRegexp(line string, anchored, dirOnly bool) string {
 	var b strings.Builder
 	b.WriteString("^")
 	if !anchored {
@@ -130,12 +140,7 @@ func compileIgnore(line string) (ignorePattern, bool) {
 		b.WriteString("(?:/.*)?")
 	}
 	b.WriteString("$")
-
-	re, err := regexp.Compile(b.String())
-	if err != nil {
-		return ignorePattern{}, false
-	}
-	return ignorePattern{re: re, negate: negate}, true
+	return b.String()
 }
 
 // translateSegment renders one path segment's glob as a regexp fragment. `*`

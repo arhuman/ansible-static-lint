@@ -37,12 +37,27 @@ func (r lineLengthRule) check(buf []rune, l line) []Problem {
 // marker), or, when the inline-mapping option is on, a mapping whose value is
 // itself unbreakable.
 func (r lineLengthRule) exempt(buf []rune, l line) bool {
-	start := l.start
+	start, ok := wordStart(buf, l)
+	if !ok {
+		return false
+	}
+	for i := start; i < l.end && i >= 0; i++ {
+		if buf[i] == ' ' {
+			return r.allowInlineMappings && inlineMappingIsUnbreakable(buf[l.start:l.end])
+		}
+	}
+	return true
+}
+
+// wordStart returns where the first word of l begins, past the indentation
+// and a leading `#...` or `- ` marker. ok is false for a line of spaces only.
+func wordStart(buf []rune, l line) (start int, ok bool) {
+	start = l.start
 	for start < l.end && buf[start] == ' ' {
 		start++
 	}
 	if start == l.end {
-		return false
+		return 0, false
 	}
 	switch buf[start] {
 	case '#':
@@ -53,17 +68,7 @@ func (r lineLengthRule) exempt(buf []rune, l line) bool {
 	case '-':
 		start += 2
 	}
-	hasSpace := false
-	for i := start; i < l.end && i >= 0; i++ {
-		if buf[i] == ' ' {
-			hasSpace = true
-			break
-		}
-	}
-	if !hasSpace {
-		return true
-	}
-	return r.allowInlineMappings && inlineMappingIsUnbreakable(buf[l.start:l.end])
+	return start, true
 }
 
 // inlineMappingIsUnbreakable reports whether a line is a mapping whose first
@@ -124,11 +129,7 @@ type emptyLinesRule struct {
 func (emptyLinesRule) id() string { return "empty-lines" }
 
 func (r emptyLinesRule) check(buf []rune, l line) []Problem {
-	if l.start != l.end || l.end >= len(buf) {
-		return nil
-	}
-	// Only alert on the last blank line of a series.
-	if l.end+2 <= len(buf) && buf[l.end] == '\n' && buf[l.end+1] == '\n' {
+	if !endsBlankSeries(buf, l) {
 		return nil
 	}
 
@@ -162,6 +163,15 @@ func (r emptyLinesRule) check(buf []rune, l line) []Problem {
 		}}
 	}
 	return nil
+}
+
+// endsBlankSeries reports whether l is a blank line and the last of its
+// series, the only one empty-lines alerts on.
+func endsBlankSeries(buf []rune, l line) bool {
+	if l.start != l.end || l.end >= len(buf) {
+		return false
+	}
+	return l.end+2 > len(buf) || buf[l.end] != '\n' || buf[l.end+1] != '\n'
 }
 
 // newLineAtEndOfFileRule is yamllint's new-line-at-end-of-file.

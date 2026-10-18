@@ -102,14 +102,12 @@ func Load(dir string) (cfg *Config, warnings []string, err error) {
 func findConfig(dir string) string {
 	for _, name := range configNames {
 		p := filepath.Join(dir, name)
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+		if isFile(p) {
 			return p
 		}
 	}
-	if env := os.Getenv("YAMLLINT_CONFIG_FILE"); env != "" {
-		if fi, err := os.Stat(env); err == nil && !fi.IsDir() {
-			return env
-		}
+	if env := os.Getenv("YAMLLINT_CONFIG_FILE"); env != "" && isFile(env) {
+		return env
 	}
 	home := os.Getenv("XDG_CONFIG_HOME")
 	if home == "" {
@@ -120,10 +118,16 @@ func findConfig(dir string) string {
 		home = filepath.Join(h, ".config")
 	}
 	p := filepath.Join(home, "yamllint", "config")
-	if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+	if isFile(p) {
 		return p
 	}
 	return ""
+}
+
+// isFile reports whether p names something other than a directory.
+func isFile(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 // rawConfig is a yamllint configuration file as written.
@@ -149,23 +153,12 @@ func parseFile(path, base string, seen map[string]struct{}, depth int) (*Config,
 	}
 	seen[key] = struct{}{}
 
-	data, err := safeio.ReadFile(path, safeio.MaxConfigBytes)
+	raw, err := readRawConfig(path)
 	if err != nil {
-		return nil, nil, &loadError{
-			kind:  "could not be read",
-			cause: fmt.Errorf("yamllint config: %w", err),
-		}
-	}
-	var raw rawConfig
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, nil, &loadError{
-			kind:  "is not valid YAML",
-			cause: fmt.Errorf("yamllint config %s: %w", path, err),
-		}
+		return nil, nil, err
 	}
 
 	cfg := &Config{rules: map[string]*ruleConf{}}
-	var warnings []string
 	for id, node := range raw.Rules {
 		conf, err := parseRule(id, node)
 		if err != nil {
@@ -176,6 +169,47 @@ func parseFile(path, base string, seen map[string]struct{}, depth int) (*Config,
 		}
 		cfg.rules[id] = conf
 	}
+	ignore, warnings, err := configIgnore(raw, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg.ignore = ignore
+
+	if raw.Extends != "" {
+		parent, parentWarnings, err := parseExtends(raw.Extends, base, seen, depth+1)
+		if err != nil {
+			return nil, nil, fmt.Errorf("yamllint config %s: %w", path, err)
+		}
+		warnings = append(warnings, parentWarnings...)
+		cfg = cfg.extend(parent)
+	}
+	return cfg.fillDefaults(), warnings, nil
+}
+
+// readRawConfig reads and decodes one configuration file, without resolving
+// anything it refers to.
+func readRawConfig(path string) (rawConfig, error) {
+	var raw rawConfig
+	data, err := safeio.ReadFile(path, safeio.MaxConfigBytes)
+	if err != nil {
+		return raw, &loadError{
+			kind:  "could not be read",
+			cause: fmt.Errorf("yamllint config: %w", err),
+		}
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return raw, &loadError{
+			kind:  "is not valid YAML",
+			cause: fmt.Errorf("yamllint config %s: %w", path, err),
+		}
+	}
+	return raw, nil
+}
+
+// configIgnore builds the ignore spec of the file at path from its `ignore`
+// or `ignore-from-file` key, which are mutually exclusive. It is nil when
+// neither is set.
+func configIgnore(raw rawConfig, path string) (*ignoreSpec, []string, error) {
 	if !raw.Ignore.IsZero() && !raw.IgnoreFromFile.IsZero() {
 		return nil, nil, &loadError{
 			kind:  "is not a valid yamllint configuration",
@@ -191,7 +225,7 @@ func parseFile(path, base string, seen map[string]struct{}, depth int) (*Config,
 				cause: fmt.Errorf("yamllint config %s: ignore: %w", path, err),
 			}
 		}
-		cfg.ignore = parseIgnore(lines)
+		return parseIgnore(lines), nil, nil
 	case !raw.IgnoreFromFile.IsZero():
 		lines, warn, err := ignoreFromFiles(raw.IgnoreFromFile, filepath.Dir(path))
 		if err != nil {
@@ -200,19 +234,9 @@ func parseFile(path, base string, seen map[string]struct{}, depth int) (*Config,
 				cause: fmt.Errorf("yamllint config %s: ignore-from-file: %w", path, err),
 			}
 		}
-		warnings = append(warnings, warn...)
-		cfg.ignore = parseIgnore(lines)
+		return parseIgnore(lines), warn, nil
 	}
-
-	if raw.Extends != "" {
-		parent, parentWarnings, err := parseExtends(raw.Extends, base, seen, depth+1)
-		if err != nil {
-			return nil, nil, fmt.Errorf("yamllint config %s: %w", path, err)
-		}
-		warnings = append(warnings, parentWarnings...)
-		cfg = cfg.extend(parent)
-	}
-	return cfg.fillDefaults(), warnings, nil
+	return nil, nil, nil
 }
 
 // parseExtends resolves an `extends` value: one of yamllint's bundled
