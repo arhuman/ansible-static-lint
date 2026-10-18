@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/arhuman/ansible-static-lint)](https://github.com/arhuman/ansible-static-lint/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/arhuman/ansible-static-lint.svg)](https://pkg.go.dev/github.com/arhuman/ansible-static-lint)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![KwalitAI score](https://www.kwalitai.com/r/arhuman/ansible-static-lint/badge.svg)](https://www.kwalitai.com/r/arhuman/ansible-static-lint)
 
 **A fast, offline static companion to ansible-lint, for editor-on-save,
 pre-commit, or a CI pre-check.** No Ansible runtime, no Python, no environment
