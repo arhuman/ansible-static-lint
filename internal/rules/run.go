@@ -83,38 +83,47 @@ func applySkips(f *parse.File, findings []Finding) []Finding {
 	if isMetadataKind(f.Kind) {
 		fileSkips = canonicalSkips(f.AllSkips())
 	}
-	taskSkips := taskSkipRanges(f)
+	scopes := skipScopes{file: fileSkips, task: taskSkipRanges(f)}
 	// The generic per-line filter of upstream's runner: a noqa token on the
 	// finding's own line silences that exact tag, whatever the file kind. It
 	// is what suppresses yaml[*] findings outside any task or metadata scope.
-	lineSkips := make(map[int]map[string]bool, len(f.Noqa))
+	scopes.line = make(map[int]map[string]bool, len(f.Noqa))
 	for line, set := range f.Noqa {
-		lineSkips[line] = canonicalSkips(set)
+		scopes.line[line] = canonicalSkips(set)
 	}
 
 	out := findings[:0]
 	for _, fd := range findings {
-		if lineSkips[fd.Line][fd.Tag] {
-			continue
-		}
-		// A line-scoped finding takes its rule's own same-line filter, which
-		// also accepts the bare rule id, and nothing else.
-		if fd.lineScoped {
-			if skipped(lineSkips[fd.Line], fd) {
-				continue
-			}
+		if !scopes.silence(fd) {
 			out = append(out, fd)
-			continue
 		}
-		// The task and metadata skip scopes never reach upstream's yamllint
-		// rule: a skip_ansible_lint tag or a task-scoped noqa leaves yaml[*]
-		// findings standing, only the same-line tag-exact noqa above applies.
-		if fd.RuleID() != "yaml" && (skipped(fileSkips, fd) || skipped(taskSkips[fd.Line], fd)) {
-			continue
-		}
-		out = append(out, fd)
 	}
 	return out
+}
+
+// skipScopes are the skip sets a file's findings are filtered through: the
+// whole file (metadata kinds only), the task covering a line, and the line
+// itself.
+type skipScopes struct {
+	file map[string]bool
+	task map[int]map[string]bool
+	line map[int]map[string]bool
+}
+
+// silence reports whether any scope suppresses fd.
+func (s skipScopes) silence(fd Finding) bool {
+	if s.line[fd.Line][fd.Tag] {
+		return true
+	}
+	// A line-scoped finding takes its rule's own same-line filter, which
+	// also accepts the bare rule id, and nothing else.
+	if fd.lineScoped {
+		return skipped(s.line[fd.Line], fd)
+	}
+	// The task and metadata skip scopes never reach upstream's yamllint
+	// rule: a skip_ansible_lint tag or a task-scoped noqa leaves yaml[*]
+	// findings standing, only the same-line tag-exact noqa above applies.
+	return fd.RuleID() != "yaml" && (skipped(s.file, fd) || skipped(s.task[fd.Line], fd))
 }
 
 // taskSkipRanges maps every line covered by a task to the skips collected

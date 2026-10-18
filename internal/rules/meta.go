@@ -128,40 +128,37 @@ func metaVideoLinks(f *parse.File, galaxyInfo *yaml.Node) []Finding {
 	}
 	var out []Finding
 	for _, video := range links.Content {
-		if !parse.IsMap(video) {
-			out = append(out, at(f, video, "meta-video-links",
-				"Expected item in 'video_links' to be a dictionary",
-				"This video_links entry is not a mapping. Give it url and title keys."))
-			continue
-		}
-		unexpected := false
-		for _, k := range parse.MapKeys(video) {
-			if k != "url" && k != "title" {
-				unexpected = true
-			}
-		}
-		if unexpected {
-			out = append(out, at(f, video, "meta-video-links",
-				"Expected item in 'video_links' to contain only keys 'url' and 'title'",
-				"This video_links entry has keys beyond url and title. Remove the extras."))
-			continue
-		}
-		urlNode := parse.MapGet(video, "url")
-		url := parse.Str(urlNode)
-		matched := false
-		for _, re := range reVideoURL {
-			if re.MatchString(url) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			out = append(out, at(f, urlNode, "meta-video-links",
-				fmt.Sprintf("URL format '%s' is not recognized. Expected it be a shared link from Vimeo, YouTube, or Google Drive.", url),
-				"This video link is not a Vimeo, YouTube or Google Drive share URL. Replace it."))
+		if fd, bad := videoLinkFinding(f, video); bad {
+			out = append(out, fd)
 		}
 	}
 	return out
+}
+
+// videoLinkFinding checks one video_links entry; bad is false when it holds.
+func videoLinkFinding(f *parse.File, video *yaml.Node) (fd Finding, bad bool) {
+	if !parse.IsMap(video) {
+		return at(f, video, "meta-video-links",
+			"Expected item in 'video_links' to be a dictionary",
+			"This video_links entry is not a mapping. Give it url and title keys."), true
+	}
+	for _, k := range parse.MapKeys(video) {
+		if k != "url" && k != "title" {
+			return at(f, video, "meta-video-links",
+				"Expected item in 'video_links' to contain only keys 'url' and 'title'",
+				"This video_links entry has keys beyond url and title. Remove the extras."), true
+		}
+	}
+	urlNode := parse.MapGet(video, "url")
+	url := parse.Str(urlNode)
+	for _, re := range reVideoURL {
+		if re.MatchString(url) {
+			return Finding{}, false
+		}
+	}
+	return at(f, urlNode, "meta-video-links",
+		fmt.Sprintf("URL format '%s' is not recognized. Expected it be a shared link from Vimeo, YouTube, or Google Drive.", url),
+		"This video link is not a Vimeo, YouTube or Google Drive share URL. Replace it."), true
 }
 
 func metaRuntimeRules(f *parse.File) []Finding {
@@ -214,24 +211,38 @@ func galaxyRules(f *parse.File) []Finding {
 		return nil
 	}
 	base := filepath.Dir(f.Abs)
-	var out []Finding
-
-	if deps := parse.MapGet(f.Root, "dependencies"); parse.IsMap(deps) {
-		for i := 0; i+1 < len(deps.Content); i += 2 {
-			if strings.TrimSpace(parse.Str(deps.Content[i+1])) == "" {
-				out = append(out, whole(f, "galaxy[invalid-dependency-version]",
-					fmt.Sprintf("Invalid collection metadata. Dependency version spec range is invalid for '%s'.", deps.Content[i].Value),
-					"This dependency has an invalid version specifier. Fix the version range."))
-			}
-		}
-	}
-
+	out := galaxyDependencies(f)
 	if !anyFileExists(base, "changelogs/changelog.yaml", "changelogs/changelog.yml", "CHANGELOG.rst", "CHANGELOG.md") {
 		out = append(out, whole(f, "galaxy[no-changelog]",
 			"No changelog found. Please add a changelog file. Refer to the galaxy.md file for more info.",
 			"This collection has no changelog. Add a CHANGELOG.rst or similar."))
 	}
+	out = append(out, galaxyTags(f)...)
+	return append(out, galaxyPublication(f, base)...)
+}
 
+// galaxyDependencies flags dependencies of galaxy.yml with an empty version
+// range.
+func galaxyDependencies(f *parse.File) []Finding {
+	deps := parse.MapGet(f.Root, "dependencies")
+	if !parse.IsMap(deps) {
+		return nil
+	}
+	var out []Finding
+	for i := 0; i+1 < len(deps.Content); i += 2 {
+		if strings.TrimSpace(parse.Str(deps.Content[i+1])) == "" {
+			out = append(out, whole(f, "galaxy[invalid-dependency-version]",
+				fmt.Sprintf("Invalid collection metadata. Dependency version spec range is invalid for '%s'.", deps.Content[i].Value),
+				"This dependency has an invalid version specifier. Fix the version range."))
+		}
+	}
+	return out
+}
+
+// galaxyTags checks the tags of galaxy.yml: a required certification tag,
+// then their format, length and count.
+func galaxyTags(f *parse.File) []Finding {
+	var out []Finding
 	tags := parse.StrList(parse.MapGet(f.Root, "tags"))
 	if !containsAny(tags, requiredGalaxyTags) {
 		out = append(out, whole(f, "galaxy[tags]",
@@ -262,11 +273,17 @@ func galaxyRules(f *parse.File) []Finding {
 			fmt.Sprintf("galaxy.yaml exceeds %d tags. Current count: %d", maxTagsCount, len(tags)),
 			fmt.Sprintf("This collection declares more than %d tags. Remove some.", maxTagsCount)))
 	}
+	return out
+}
 
+// galaxyPublication checks what Galaxy needs to publish a collection. A
+// missing version stops the checks, as it does upstream.
+func galaxyPublication(f *parse.File, base string) []Finding {
 	if !parse.MapHas(f.Root, "version") {
-		return append(out, at(f, f.Root, "galaxy[version-missing]", "galaxy.yaml should have version tag.",
-			"This collection's galaxy.yml has no version field. Add one."))
+		return []Finding{at(f, f.Root, "galaxy[version-missing]", "galaxy.yaml should have version tag.",
+			"This collection's galaxy.yml has no version field. Add one.")}
 	}
+	var out []Finding
 	if !anyFileExists(base, "meta/runtime.yml") {
 		out = append(out, whole(f, "galaxy[no-runtime]", "meta/runtime.yml file not found.",
 			"This collection has no meta/runtime.yml. Add one to declare ansible-core support."))

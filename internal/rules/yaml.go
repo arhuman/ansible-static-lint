@@ -138,20 +138,7 @@ func yamlFinding(f *parse.File, p yamllint.Problem) Finding {
 			"Too many spaces after hyphen",
 			"More than one space follows the list hyphen. Keep exactly one.")
 	case "indentation":
-		switch len(p.Args) {
-		case 2:
-			return yamlAt(f, p, "yaml[indentation]",
-				fmt.Sprintf("Wrong indentation: expected %d but found %d", p.Args...),
-				fmt.Sprintf("This element sits at column %[2]d, its structure wants %[1]d. Re-indent it.", p.Args...))
-		case 1:
-			return yamlAt(f, p, "yaml[indentation]",
-				fmt.Sprintf("Wrong indentation: expected at least %d", p.Args...),
-				fmt.Sprintf("This element is not indented past its parent. Move it to column %d or beyond.", p.Args...))
-		default:
-			return yamlAt(f, p, "yaml[indentation]",
-				"Cannot infer indentation: unexpected token",
-				"The token layout defeats indentation inference. Check the structure around this line.")
-		}
+		return yamlIndentation(f, p)
 	case "key-duplicates":
 		return yamlAt(f, p, "yaml[key-duplicates]",
 			fmt.Sprintf(`Duplication of key "%s" in mapping`, pyLower(p.Args[0])),
@@ -194,6 +181,25 @@ func yamlFinding(f *parse.File, p yamllint.Problem) Finding {
 		return yamlAt(f, p, "yaml[truthy]",
 			fmt.Sprintf("Truthy value should be one of [%s]", p.Args...),
 			fmt.Sprintf("A bare YAML 1.1 boolean is ambiguous. Write one of %s instead.", p.Args...))
+	}
+}
+
+// yamlIndentation words an indentation problem; its argument count says which
+// of the three descriptions it carries.
+func yamlIndentation(f *parse.File, p yamllint.Problem) Finding {
+	switch len(p.Args) {
+	case 2:
+		return yamlAt(f, p, "yaml[indentation]",
+			fmt.Sprintf("Wrong indentation: expected %d but found %d", p.Args...),
+			fmt.Sprintf("This element sits at column %[2]d, its structure wants %[1]d. Re-indent it.", p.Args...))
+	case 1:
+		return yamlAt(f, p, "yaml[indentation]",
+			fmt.Sprintf("Wrong indentation: expected at least %d", p.Args...),
+			fmt.Sprintf("This element is not indented past its parent. Move it to column %d or beyond.", p.Args...))
+	default:
+		return yamlAt(f, p, "yaml[indentation]",
+			"Cannot infer indentation: unexpected token",
+			"The token layout defeats indentation inference. Check the structure around this line.")
 	}
 }
 

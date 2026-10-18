@@ -76,6 +76,29 @@ func varNameFinding(f *parse.File, node *yaml.Node, ident string, prefix varPref
 	if annotationKeys[ident] || allowedSpecialVarNames[ident] {
 		return Finding{}, false
 	}
+	if fd, ok := forbiddenVarName(f, node, ident); ok {
+		return fd, true
+	}
+	// Jinja templating in a variable name is allowed.
+	if strings.Contains(ident, "{{") {
+		return Finding{}, false
+	}
+	if !pat.re.MatchString(ident) && (!prefix.active || !prefix.fromFQCN) {
+		return at(f, node, "var-naming[pattern]",
+			fmt.Sprintf("Variables names should match %s regex. (%s)", pat.src, ident),
+			fmt.Sprintf("Variable name %s does not match %s. Use lowercase letters, digits and underscores.", ident, pat.src)), true
+	}
+	if missingRolePrefix(ident, prefix) {
+		return at(f, node, "var-naming[no-role-prefix]",
+			fmt.Sprintf("Variables names from within roles should use %s_ as a prefix.", prefix.value),
+			fmt.Sprintf("Role variables should carry the %s_ prefix. Rename the variable to start with it.", prefix.value)), true
+	}
+	return Finding{}, false
+}
+
+// forbiddenVarName flags a name no variable may take, whatever the pattern:
+// non-ASCII, a Python keyword, an Ansible reserved name or a read-only one.
+func forbiddenVarName(f *parse.File, node *yaml.Node, ident string) (Finding, bool) {
 	if !isASCII(ident) {
 		return at(f, node, "var-naming[non-ascii]",
 			fmt.Sprintf("Variables names must be ASCII. (%s)", ident),
@@ -96,27 +119,18 @@ func varNameFinding(f *parse.File, node *yaml.Node, ident string, prefix varPref
 			fmt.Sprintf("This special variable is read-only. (%s)", ident),
 			fmt.Sprintf("Variable %s is read-only in Ansible. Assign your value to a different name.", ident)), true
 	}
-	// Jinja templating in a variable name is allowed.
-	if strings.Contains(ident, "{{") {
-		return Finding{}, false
-	}
-	if !pat.re.MatchString(ident) && (!prefix.active || !prefix.fromFQCN) {
-		return at(f, node, "var-naming[pattern]",
-			fmt.Sprintf("Variables names should match %s regex. (%s)", pat.src, ident),
-			fmt.Sprintf("Variable name %s does not match %s. Use lowercase letters, digits and underscores.", ident, pat.src)), true
-	}
-	// The ansible_ namespace is owned by Ansible and cannot carry a role prefix.
+	return Finding{}, false
+}
+
+// missingRolePrefix reports whether ident lacks the role prefix it should
+// carry. The ansible_ namespace is owned by Ansible and cannot carry one.
+func missingRolePrefix(ident string, prefix varPrefix) bool {
 	bare := strings.TrimLeft(ident, "_")
-	if prefix.active &&
+	return prefix.active &&
 		!strings.HasPrefix(bare, "ansible_") &&
 		!strings.HasPrefix(bare, prefix.value+"_") &&
 		!reHasJinja.MatchString(prefix.value) &&
-		isFQCNOrName(prefix.value) {
-		return at(f, node, "var-naming[no-role-prefix]",
-			fmt.Sprintf("Variables names from within roles should use %s_ as a prefix.", prefix.value),
-			fmt.Sprintf("Role variables should carry the %s_ prefix. Rename the variable to start with it.", prefix.value)), true
-	}
-	return Finding{}, false
+		isFQCNOrName(prefix.value)
 }
 
 // varNonString reports a mapping key that is not a string, which upstream
@@ -169,18 +183,26 @@ func varNamingRules(f *parse.File, opt Options) []Finding {
 // role prefix from the role directory, ` (vars: k)` suffix, line-scoped
 // suppression.
 func varNamingVarsFile(f *parse.File, pat varPattern) []Finding {
-	if !parse.IsMap(f.Root) {
+	prefix := varPrefix{value: f.Role, active: true}
+	return mappingVarFindings(f, f.Root, prefix, pat, true)
+}
+
+// mappingVarFindings checks every key of mapping m as a variable name. Each
+// finding is line-scoped and, when suffixed, carries the ` (vars: k)` marker.
+func mappingVarFindings(f *parse.File, m *yaml.Node, prefix varPrefix, pat varPattern, suffixed bool) []Finding {
+	if !parse.IsMap(m) {
 		return nil
 	}
-	prefix := varPrefix{value: f.Role, active: true}
 	var out []Finding
-	for i := 0; i+1 < len(f.Root.Content); i += 2 {
-		key := f.Root.Content[i]
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		key := m.Content[i]
 		fd, ok := checkVarKey(f, key, prefix, pat)
 		if !ok {
 			continue
 		}
-		fd.suffix("vars", pyStr(key))
+		if suffixed {
+			fd.suffix("vars", pyStr(key))
+		}
 		fd.lineScoped = true
 		out = append(out, fd)
 	}
@@ -197,32 +219,29 @@ func varNamingPlays(f *parse.File, pat varPattern) []Finding {
 	}
 	var out []Finding
 	for _, entry := range f.Root.Content {
-		if !parse.IsMap(entry) {
+		if !parse.IsMap(entry) || entrySkipsVarNaming(f, entry) {
 			continue
 		}
-		if skipTagIn(parse.MapGet(entry, "tags")) {
-			continue
-		}
-		// Upstream attaches aggregated noqa skips to tasks, never to plays, so
-		// only a task-shaped entry of a tasks or handlers file is skipped
-		// whole, and only by its bare rule id.
-		if f.Kind != "playbook" {
-			entrySkips := canonicalSkips(f.SkipsInRange(parse.NodePos(entry).Line, parse.EndLine(entry)))
-			if entrySkips["var-naming"] {
-				continue
-			}
-		}
-		if vars := parse.MapGet(entry, "vars"); parse.IsMap(vars) {
-			for i := 0; i+1 < len(vars.Content); i += 2 {
-				if fd, ok := checkVarKey(f, vars.Content[i], noVarPrefix, pat); ok {
-					fd.lineScoped = true
-					out = append(out, fd)
-				}
-			}
-		}
+		out = append(out, mappingVarFindings(f, parse.MapGet(entry, "vars"), noVarPrefix, pat, false)...)
 		out = append(out, varNamingRoleEntries(f, parse.MapGet(entry, "roles"), pat)...)
 	}
 	return out
+}
+
+// entrySkipsVarNaming reports whether a top-level entry is exempt from
+// var-naming as a whole.
+func entrySkipsVarNaming(f *parse.File, entry *yaml.Node) bool {
+	if skipTagIn(parse.MapGet(entry, "tags")) {
+		return true
+	}
+	// Upstream attaches aggregated noqa skips to tasks, never to plays, so
+	// only a task-shaped entry of a tasks or handlers file is skipped
+	// whole, and only by its bare rule id.
+	if f.Kind == "playbook" {
+		return false
+	}
+	entrySkips := canonicalSkips(f.SkipsInRange(parse.NodePos(entry).Line, parse.EndLine(entry)))
+	return entrySkips["var-naming"]
 }
 
 // varNamingRoleEntries checks the mapping entries of a play's `roles:` list:
@@ -234,36 +253,33 @@ func varNamingRoleEntries(f *parse.File, roles *yaml.Node, pat varPattern) []Fin
 	}
 	var out []Finding
 	for _, role := range roles.Content {
-		if !parse.IsMap(role) {
-			continue
-		}
-		ref := parse.MapGet(role, "role")
-		if ref == nil {
-			ref = parse.MapGet(role, "name")
-		}
-		prefix := parseVarPrefix(parse.Str(ref))
-		for i := 0; i+1 < len(role.Content); i += 2 {
-			key := role.Content[i]
-			if playbookRoleKeywords[key.Value] && key.Tag == "!!str" {
-				continue
-			}
-			if fd, ok := checkVarKey(f, key, prefix, pat); ok {
-				fd.suffix("vars", pyStr(key))
-				fd.lineScoped = true
-				out = append(out, fd)
-			}
-		}
-		if vars := parse.MapGet(role, "vars"); parse.IsMap(vars) {
-			for i := 0; i+1 < len(vars.Content); i += 2 {
-				if fd, ok := checkVarKey(f, vars.Content[i], prefix, pat); ok {
-					fd.suffix("vars", pyStr(vars.Content[i]))
-					fd.lineScoped = true
-					out = append(out, fd)
-				}
-			}
+		if parse.IsMap(role) {
+			out = append(out, roleEntryVarFindings(f, role, pat)...)
 		}
 	}
 	return out
+}
+
+// roleEntryVarFindings checks one mapping entry of a `roles:` list.
+func roleEntryVarFindings(f *parse.File, role *yaml.Node, pat varPattern) []Finding {
+	ref := parse.MapGet(role, "role")
+	if ref == nil {
+		ref = parse.MapGet(role, "name")
+	}
+	prefix := parseVarPrefix(parse.Str(ref))
+	var out []Finding
+	for i := 0; i+1 < len(role.Content); i += 2 {
+		key := role.Content[i]
+		if playbookRoleKeywords[key.Value] && key.Tag == "!!str" {
+			continue
+		}
+		if fd, ok := checkVarKey(f, key, prefix, pat); ok {
+			fd.suffix("vars", pyStr(key))
+			fd.lineScoped = true
+			out = append(out, fd)
+		}
+	}
+	return append(out, mappingVarFindings(f, parse.MapGet(role, "vars"), prefix, pat, true)...)
 }
 
 // varNamingTasks is upstream's matchtask path: task vars (role prefix only

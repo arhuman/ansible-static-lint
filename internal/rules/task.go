@@ -224,17 +224,7 @@ func noFreeForm(f *parse.File, t *parse.Task) []Finding {
 	}
 
 	if t.Module == "raw" {
-		if !parse.IsScalar(value) {
-			return []Finding{onLine(f, t.Pos.Line, "no-free-form[raw-non-string]",
-				"Passing a non string value to `raw` module is neither documented or supported.",
-				"This `raw` call is given a value that is not a string. Pass the command as a string.")}
-		}
-		if !strings.Contains(value.Value, "executable=") {
-			return nil
-		}
-		return []Finding{onLine(f, t.Pos.Line, "no-free-form[raw]",
-			"Avoid embedding `executable=` inside raw calls, use explicit args dictionary instead.",
-			"This `raw` call embeds `executable=`. Pass it in an explicit args mapping.")}
+		return noFreeFormRaw(f, t, value)
 	}
 
 	if !parse.IsScalar(value) || !strings.Contains(value.Value, "=") {
@@ -246,6 +236,22 @@ func noFreeForm(f *parse.File, t *parse.Task) []Finding {
 	return []Finding{onLine(f, t.Pos.Line, "no-free-form",
 		fmt.Sprintf("Avoid using free-form when calling module actions. (%s)", t.ModuleOriginal),
 		"This action is written free-form. Pass its arguments as a mapping.")}
+}
+
+// noFreeFormRaw is no-free-form for the `raw` module, whose value is free-form
+// by design and is only flagged when it is not a string or embeds an option.
+func noFreeFormRaw(f *parse.File, t *parse.Task, value *yaml.Node) []Finding {
+	if !parse.IsScalar(value) {
+		return []Finding{onLine(f, t.Pos.Line, "no-free-form[raw-non-string]",
+			"Passing a non string value to `raw` module is neither documented or supported.",
+			"This `raw` call is given a value that is not a string. Pass the command as a string.")}
+	}
+	if !strings.Contains(value.Value, "executable=") {
+		return nil
+	}
+	return []Finding{onLine(f, t.Pos.Line, "no-free-form[raw]",
+		"Avoid embedding `executable=` inside raw calls, use explicit args dictionary instead.",
+		"This `raw` call embeds `executable=`. Pass it in an explicit args mapping.")}
 }
 
 func deprecatedLocalAction(f *parse.File, t *parse.Task) []Finding {
@@ -269,15 +275,7 @@ var bareVarListLoops = map[string]bool{
 }
 
 func deprecatedBareVars(f *parse.File, t *parse.Task) []Finding {
-	var loopType string
-	var loopValue *yaml.Node
-	for i := 0; i+1 < len(t.Node.Content); i += 2 {
-		if strings.HasPrefix(t.Node.Content[i].Value, "with_") {
-			loopType = t.Node.Content[i].Value
-			loopValue = t.Node.Content[i+1]
-			break
-		}
-	}
+	loopType, loopValue := firstWithLoop(t.Node)
 	if loopType == "" || bareVarSkippedLoops[loopType] {
 		return nil
 	}
@@ -305,6 +303,17 @@ func deprecatedBareVars(f *parse.File, t *parse.Task) []Finding {
 	}
 }
 
+// firstWithLoop returns the key and value of a task's first `with_*` loop, or
+// "" and nil when it has none.
+func firstWithLoop(task *yaml.Node) (loopType string, loopValue *yaml.Node) {
+	for i := 0; i+1 < len(task.Content); i += 2 {
+		if strings.HasPrefix(task.Content[i].Value, "with_") {
+			return task.Content[i].Value, task.Content[i+1]
+		}
+	}
+	return "", nil
+}
+
 func matchBareVar(f *parse.File, t *parse.Task, loopType string, loopValue, v *yaml.Node) []Finding {
 	if !parse.IsScalar(v) || v.Tag != "!!str" {
 		return nil
@@ -313,9 +322,7 @@ func matchBareVar(f *parse.File, t *parse.Task, loopType string, loopValue, v *y
 	if reHasJinja.MatchString(s) || !reFQCNOrName.MatchString(s) {
 		return nil
 	}
-	valid := loopType == "with_fileglob" && (reHasJinja.MatchString(s) || reHasGlob.MatchString(s))
-	valid = valid || (loopType == "with_filetree" && (reHasJinja.MatchString(s) || strings.HasSuffix(s, "/")))
-	if valid {
+	if bareNameAllowed(loopType, s) {
 		return nil
 	}
 	shown := pyReprInner(loopValue)
@@ -324,6 +331,19 @@ func matchBareVar(f *parse.File, t *parse.Task, loopType string, loopValue, v *y
 		shown, loopType, shown)
 	nativeMsg := fmt.Sprintf("This loop uses the bare variable '%s'. Wrap it in {{ }}.", shown)
 	return []Finding{onLine(f, t.Pos.Line, "deprecated-bare-vars", msg, nativeMsg)}
+}
+
+// bareNameAllowed reports the loop values that look like a bare name but are
+// a valid argument to their loop: a glob for with_fileglob, a directory for
+// with_filetree.
+func bareNameAllowed(loopType, s string) bool {
+	switch loopType {
+	case "with_fileglob":
+		return reHasJinja.MatchString(s) || reHasGlob.MatchString(s)
+	case "with_filetree":
+		return reHasJinja.MatchString(s) || strings.HasSuffix(s, "/")
+	}
+	return false
 }
 
 // pyReprInner renders a value the way Python's str.format does: plain for

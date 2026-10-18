@@ -171,25 +171,7 @@ func pyRepr(n *yaml.Node) string {
 	}
 	switch n.Kind {
 	case yaml.ScalarNode:
-		switch n.Tag {
-		case "!!null":
-			return "None"
-		case "!!bool":
-			if strings.EqualFold(n.Value, "true") || n.Value == "yes" || n.Value == "on" {
-				return "True"
-			}
-			return "False"
-		case "!!int", "!!float":
-			return n.Value
-		default:
-			// A plain `no` is a string to yaml.v3 and False to the PyYAML
-			// ansible parses with, so it has to render as Python's False here
-			// rather than as the quoted word.
-			if v, ok := parse.PyBool(n); ok {
-				return pyBoolLiteral(v)
-			}
-			return pyQuote(n.Value)
-		}
+		return pyReprScalar(n)
 	case yaml.SequenceNode:
 		parts := make([]string, 0, len(n.Content))
 		for _, c := range n.Content {
@@ -203,6 +185,29 @@ func pyRepr(n *yaml.Node) string {
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	default:
+		return pyQuote(n.Value)
+	}
+}
+
+// pyReprScalar is pyRepr for a scalar node.
+func pyReprScalar(n *yaml.Node) string {
+	switch n.Tag {
+	case "!!null":
+		return "None"
+	case "!!bool":
+		if strings.EqualFold(n.Value, "true") || n.Value == "yes" || n.Value == "on" {
+			return "True"
+		}
+		return "False"
+	case "!!int", "!!float":
+		return n.Value
+	default:
+		// A plain `no` is a string to yaml.v3 and False to the PyYAML
+		// ansible parses with, so it has to render as Python's False here
+		// rather than as the quoted word.
+		if v, ok := parse.PyBool(n); ok {
+			return pyBoolLiteral(v)
+		}
 		return pyQuote(n.Value)
 	}
 }
