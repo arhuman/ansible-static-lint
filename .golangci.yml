@@ -13,6 +13,7 @@ linters:
     - bodyclose
     - contextcheck
     - dupl
+    - errcheck
     - funlen
     - gocognit
     - gocyclo
@@ -80,3 +81,12 @@ linters:
           - dupl
           - funlen
           - gosec
+
+# `make audit` fails on an unformatted file rather than `make tidy` rewriting it
+# silently, so CI sees formatting drift too.
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - internal/yamlscan

@@ -12,13 +12,17 @@ import (
 // reason that has nothing to do with the code. See the same function in
 // internal/yamllint for why the second variable is set rather than unset.
 func TestMain(m *testing.M) {
-	os.Unsetenv("YAMLLINT_CONFIG_FILE")
+	if err := os.Unsetenv("YAMLLINT_CONFIG_FILE"); err != nil {
+		panic(err)
+	}
 	dir, err := os.MkdirTemp("", "astl-no-yamllint-config")
 	if err != nil {
 		panic(err)
 	}
-	os.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.Setenv("XDG_CONFIG_HOME", dir); err != nil {
+		panic(err)
+	}
 	code := m.Run()
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

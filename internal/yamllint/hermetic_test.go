@@ -20,13 +20,17 @@ import (
 // XDG_CONFIG_HOME is set to an empty directory rather than unset: unsetting it
 // selects the ~/.config branch instead of disabling it.
 func TestMain(m *testing.M) {
-	os.Unsetenv("YAMLLINT_CONFIG_FILE")
+	if err := os.Unsetenv("YAMLLINT_CONFIG_FILE"); err != nil {
+		panic(err)
+	}
 	dir, err := os.MkdirTemp("", "astl-no-yamllint-config")
 	if err != nil {
 		panic(err)
 	}
-	os.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.Setenv("XDG_CONFIG_HOME", dir); err != nil {
+		panic(err)
+	}
 	code := m.Run()
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

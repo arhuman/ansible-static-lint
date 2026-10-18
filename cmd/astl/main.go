@@ -116,6 +116,12 @@ func memoryLimitFor(items []discover.Item, workers int) int64 {
 }
 
 // run is the whole CLI; main only supplies the process streams and exits.
+// diag writes a diagnostic. Its write error is dropped because a failing
+// stderr leaves nowhere to report it, and the exit code still carries the run.
+func diag(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("astl", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -130,14 +136,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		showVersion = fs.Bool("version", false, "print version and exit")
 	)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: astl [options] <paths...>\n\n")
+		diag(stderr, "usage: astl [options] <paths...>\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
 	if *showVersion {
-		fmt.Fprintf(stdout, "astl %s\n", build)
+		if _, err := fmt.Fprintf(stdout, "astl %s\n", build); err != nil {
+			return exitError
+		}
 		return exitClean
 	}
 	if *formatLong != "" {
@@ -154,7 +162,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
-		fmt.Fprintln(stderr, "astl:", err)
+		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
 
@@ -166,7 +174,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	ignores, err := loadIgnores(*ignorePath, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "astl:", err)
+		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
 
@@ -181,7 +189,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	findings, unchecked, err := lint(paths, cfg, sel, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "astl:", err)
+		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
 	// After the run rather than inside it: the ignore file names findings, not
@@ -191,14 +199,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	findings = ignores.Apply(findings)
 
 	if err := emit(stdout, findings, *formatName, *idsName, discover.WorkingDir(), sel); err != nil {
-		fmt.Fprintln(stderr, "astl:", err)
+		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
 	// Ordered before exitViolations deliberately: findings are on stdout either
 	// way, but only the exit code can say the run was incomplete, and that is
 	// the part a caller gating on it must not miss.
 	if unchecked > 0 {
-		fmt.Fprintf(stderr, "astl: %d file(s) could not be checked\n", unchecked)
+		diag(stderr, "astl: %d file(s) could not be checked\n", unchecked)
 		return exitIncomplete
 	}
 	// Warning-level findings print but do not fail, matching upstream's
@@ -234,7 +242,7 @@ func loadConfig(path string) (config.Config, error) {
 func loadIgnores(path string, warn io.Writer) (ignore.Rules, error) {
 	r, err := ignore.Load(".", path)
 	if errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintf(warn, "astl: ignore file not found %q\n", path)
+		diag(warn, "astl: ignore file not found %q\n", path)
 		return ignore.Rules{}, nil
 	}
 	return r, err
@@ -294,7 +302,7 @@ func emit(w io.Writer, findings []rules.Finding, formatName, idsName, workDir st
 func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer) (found []rules.Finding, unchecked int, err error) {
 	items, soft, err := discover.Walk(paths, cfg.ExcludePaths)
 	for _, e := range soft {
-		fmt.Fprintln(warn, "astl:", e)
+		diag(warn, "astl: %v\n", e)
 	}
 	unchecked += len(soft)
 	if err != nil {
@@ -313,13 +321,13 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 		return nil, 0, err
 	}
 	for _, w := range warnings {
-		fmt.Fprintln(warn, "astl:", w)
+		diag(warn, "astl: %v\n", w)
 	}
 	// An unknown profile runs every rule rather than none. Upstream may add a
 	// profile astl's table predates, and muting the linter on a name it merely
 	// does not recognise would turn a stale table into a silent pass.
 	if cfg.Profile != "" && !rules.KnownProfile(cfg.Profile) {
-		fmt.Fprintf(warn, "astl: unknown profile %q, running every rule (known: %s)\n",
+		diag(warn, "astl: unknown profile %q, running every rule (known: %s)\n",
 			cfg.Profile, strings.Join(rules.ProfileNames(), ", "))
 	}
 
@@ -360,7 +368,7 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 				found = rules.File(f, opt)
 				if err := loadFailure(f); err != nil {
 					mu.Lock()
-					fmt.Fprintln(warn, "astl:", err)
+					diag(warn, "astl: %v\n", err)
 					unchecked++
 					mu.Unlock()
 				}
