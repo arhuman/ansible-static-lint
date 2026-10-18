@@ -161,8 +161,8 @@ help:
 
 ## parity: assert output compatibility against the frozen ansible-lint corpus
 # The corpus and golden files live in a sibling repo because they carry
-# ansible-lint test data (GPL-3.0-or-later); ansible-static-lint itself stays MIT. Absent
-# sibling is a loud skip, not a failure, so the repo stays buildable standalone.
+# ansible-lint test data (GPL-3.0-or-later); ansible-static-lint itself stays MIT. An
+# absent sibling fails the target; ALLOW_MISSING_PARITY=1 turns that into a skip.
 parity:
 	$(call in_parity_repo,check,parity)
 
