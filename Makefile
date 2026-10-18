@@ -5,9 +5,9 @@ MAIN_PACKAGE ?= ./cmd/astl
 EXAMPLES    ?= examples
 
 # Quality gates. Ratchets: raise as the repo improves, never lower to green a build.
-# COVER_MIN is the coverage floor, set at the measured total (88.2%) rounded
-# down. Worst own package is internal/parse at 77.2%.
-COVER_MIN ?= 88
+# COVER_MIN is the coverage floor, set below the measured cross-package total
+# (91.8%). Worst own package is internal/safeio at 86.7%.
+COVER_MIN ?= 90
 
 # The compatibility corpus lives outside this repo (it carries GPL ansible-lint
 # test data; ansible-static-lint itself stays MIT). Override to point elsewhere.
@@ -118,6 +118,7 @@ ci: tidy audit workflows check parity bench
 workflows:
 	actionlint
 	shellcheck scripts/*.sh
+	scripts/shellcheck-action.sh
 	zizmor --offline .
 
 ## clean: remove build artifacts
@@ -131,7 +132,7 @@ clean:
 # code, and the vendored scanner is exercised end to end by the yamllint and
 # parity tests rather than line by line.
 cover:
-	go test -covermode=atomic -coverprofile=coverage.full.out $(PKG)
+	go test -covermode=atomic -coverpkg=$(PKG) -coverprofile=coverage.full.out $(PKG)
 	@grep -v "internal/yamlscan/" coverage.full.out > coverage.out
 	@go tool cover -func=coverage.out | awk '/^total:/ {print "coverage: " $$3}'
 	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {print $$3}' | tr -d '%'); \
