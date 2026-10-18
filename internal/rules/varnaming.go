@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -53,12 +54,20 @@ type varPattern struct {
 	src string
 }
 
+// varPatterns memoizes compiled naming patterns by source. A run uses one
+// pattern for every file, so compiling it per file was pure repeated work.
+var varPatterns sync.Map
+
 func (o Options) varNamingPattern() varPattern {
 	src := o.VarNamingPattern
 	if src == "" {
 		src = VarNamingPatternDefault
 	}
-	return varPattern{re: regexp.MustCompile(src), src: src}
+	if re, ok := varPatterns.Load(src); ok {
+		return varPattern{re: re.(*regexp.Regexp), src: src}
+	}
+	re, _ := varPatterns.LoadOrStore(src, regexp.MustCompile(src))
+	return varPattern{re: re.(*regexp.Regexp), src: src}
 }
 
 // varNameFinding classifies one variable name, positioned on node. The check
