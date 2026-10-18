@@ -124,21 +124,29 @@ func (t *Task) ArgTruthy(name string) bool {
 	if !ok {
 		return false
 	}
-	if a.Node != nil && a.Node.Kind == yaml.ScalarNode {
-		switch a.Node.Tag {
-		case "!!null":
-			return false
-		case "!!bool":
-			return strings.EqualFold(a.Node.Value, "true") || a.Node.Value == "yes" || a.Node.Value == "on"
-		case "!!int", "!!float":
-			return a.Node.Value != "0" && a.Node.Value != "0.0"
-		case "!!str":
-			if v, ok := PyBool(a.Node); ok {
-				return v
-			}
-		}
+	if v, ok := scalarTruthy(a.Node); ok {
+		return v
 	}
 	return a.Text != ""
+}
+
+// scalarTruthy decides the truthiness of a tagged scalar. ok is false when the
+// node's tag does not settle it and the argument text has to.
+func scalarTruthy(n *yaml.Node) (truthy, ok bool) {
+	if n == nil || n.Kind != yaml.ScalarNode {
+		return false, false
+	}
+	switch n.Tag {
+	case "!!null":
+		return false, true
+	case "!!bool":
+		return strings.EqualFold(n.Value, "true") || n.Value == "yes" || n.Value == "on", true
+	case "!!int", "!!float":
+		return n.Value != "0" && n.Value != "0.0", true
+	case "!!str":
+		return PyBool(n)
+	}
+	return false, false
 }
 
 // CmdArgs returns the command line of a free-form module, mirroring
@@ -173,20 +181,27 @@ func (f *File) buildTasks() []*Task {
 			return nil
 		}
 		for _, play := range f.Root.Content {
-			if !IsMap(play) {
-				continue
-			}
-			for _, attr := range []string{"tasks", "pre_tasks", "post_tasks", "handlers"} {
-				section := MapGet(play, attr)
-				kind := "handlers"
-				if strings.Contains(attr, "tasks") {
-					kind = "tasks"
-				}
-				out = append(out, tasksInList(section, kind)...)
+			if IsMap(play) {
+				out = append(out, playTasks(play)...)
 			}
 		}
 	case "tasks", "handlers":
 		out = append(out, tasksInList(f.Root, f.Kind)...)
+	}
+	return out
+}
+
+// playTasks returns the tasks of every task section of one play, in section
+// order.
+func playTasks(play *yaml.Node) []*Task {
+	var out []*Task
+	for _, attr := range []string{"tasks", "pre_tasks", "post_tasks", "handlers"} {
+		section := MapGet(play, attr)
+		kind := "handlers"
+		if strings.Contains(attr, "tasks") {
+			kind = "tasks"
+		}
+		out = append(out, tasksInList(section, kind)...)
 	}
 	return out
 }
@@ -264,14 +279,7 @@ func newTask(node *yaml.Node, kind string) *Task {
 	if argsNode != nil {
 		// Under `action:` or `local_action:`, `module:` names the module and is
 		// consumed by the parse; it is not an argument to it.
-		skipModule := argsNode == actionMapping(node)
-		for i := 0; i+1 < len(argsNode.Content); i += 2 {
-			key := argsNode.Content[i].Value
-			if skipModule && key == "module" {
-				continue
-			}
-			t.Args[key] = Arg{Node: argsNode.Content[i+1], Text: argsNode.Content[i+1].Value}
-		}
+		addMappingArgs(t.Args, argsNode, argsNode == actionMapping(node))
 	}
 	if freeForm != "" {
 		for k, v := range parseKV(freeForm, rawParamModules[t.Module]) {
@@ -280,11 +288,21 @@ func newTask(node *yaml.Node, kind string) *Task {
 	}
 	// An explicit `args:` mapping is merged on top of the action arguments.
 	if extra := MapGet(node, "args"); IsMap(extra) {
-		for i := 0; i+1 < len(extra.Content); i += 2 {
-			t.Args[extra.Content[i].Value] = Arg{Node: extra.Content[i+1], Text: extra.Content[i+1].Value}
-		}
+		addMappingArgs(t.Args, extra, false)
 	}
 	return t
+}
+
+// addMappingArgs copies the pairs of mapping m into args, leaving out the
+// `module` key when skipModule is set.
+func addMappingArgs(args map[string]Arg, m *yaml.Node, skipModule bool) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		key := m.Content[i].Value
+		if skipModule && key == "module" {
+			continue
+		}
+		args[key] = Arg{Node: m.Content[i+1], Text: m.Content[i+1].Value}
+	}
 }
 
 // CountActionKeys returns how many keys in a task mapping could be module
@@ -296,12 +314,18 @@ func CountActionKeys(node *yaml.Node) int {
 	n := 0
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
-		if taskKeywords[key] || strings.HasPrefix(key, "with_") || strings.HasPrefix(key, "__") {
+		if nonModuleKey(key) {
 			continue
 		}
 		n++
 	}
 	return n
+}
+
+// nonModuleKey reports whether a task key can never name a module: a task
+// keyword, a `with_` loop, or a `__` internal key.
+func nonModuleKey(key string) bool {
+	return taskKeywords[key] || strings.HasPrefix(key, "with_") || strings.HasPrefix(key, "__")
 }
 
 // actionMapping returns the mapping form of an `action:` or `local_action:`
@@ -335,7 +359,7 @@ func resolveAction(node *yaml.Node) (name string, args *yaml.Node, freeForm stri
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
-		if taskKeywords[key] || strings.HasPrefix(key, "with_") || strings.HasPrefix(key, "__") {
+		if nonModuleKey(key) {
 			continue
 		}
 		v := node.Content[i+1]
@@ -401,7 +425,7 @@ func splitArgs(s string) []string {
 		case c == '\n':
 			flush()
 			out = append(out, "\n")
-		case c == ' ' || c == '\t' || c == '\r':
+		case isArgSpace(c):
 			flush()
 		default:
 			cur.WriteByte(c)
@@ -409,6 +433,11 @@ func splitArgs(s string) []string {
 	}
 	flush()
 	return out
+}
+
+// isArgSpace reports whether c separates tokens within a line.
+func isArgSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r'
 }
 
 // joinArgs reassembles the tokens splitArgs produced, mirroring ansible's
