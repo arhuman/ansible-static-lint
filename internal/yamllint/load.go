@@ -259,9 +259,8 @@ func parseExtends(name, base string, seen map[string]struct{}, depth int) (*Conf
 	if err != nil {
 		return nil, nil, fmt.Errorf("extends %q: %w", name, safeExtendsError(err))
 	}
-	// A file reached through `extends` is a complete configuration in its own
-	// right, so its unset options fall back to yamllint's stock values rather
-	// than to whatever layer it is later applied over.
+	// An `extends` target is a complete config: its unset options fall back to
+	// yamllint's stock values, not to the layer it is later applied over.
 	return cfg.extend(newConfig()), warnings, nil
 }
 
@@ -351,9 +350,8 @@ func parseRuleShorthand(id string, node yaml.Node) (*ruleConf, error) {
 	case "disable":
 		return &ruleConf{enabled: false, opts: map[string]any{}}, nil
 	}
-	// A plain `false` switches a rule off too: yamllint only rewrites the two
-	// keywords, and its validation then reads any remaining false as
-	// "disabled". A `true` is not symmetric, it is an error there.
+	// A plain `false` disables a rule too, as yamllint's validation reads it;
+	// a `true` is not symmetric and is an error there.
 	var b bool
 	if err := node.Decode(&b); err == nil && !b {
 		return &ruleConf{enabled: false, opts: map[string]any{}}, nil

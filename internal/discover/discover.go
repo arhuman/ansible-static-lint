@@ -239,11 +239,8 @@ func (w *walk) visit(p string, d fs.DirEntry, err error) error {
 	if !ok {
 		return nil
 	}
-	// Kind patterns are `**/`-anchored, so they match the full path regardless
-	// of which root the walk started from. They are matched against the
-	// resolved path because that is the one upstream classifies: a symlink
-	// `tasks/main.yml -> ../vars/data.yml` is a vars file to ansible-lint, not
-	// a tasks file.
+	// Classify the resolved path, as upstream does: a symlink
+	// `tasks/main.yml -> ../vars/data.yml` is a vars file to ansible-lint.
 	kind := KindOf(filepath.ToSlash(target))
 	if kind == "" {
 		return nil
@@ -286,20 +283,12 @@ func resolveLink(p string, d fs.DirEntry) (string, bool) {
 // regularSize returns the size of the file p will be read as, and false when it
 // is not a regular file and so is not lintable at all.
 //
-// The size is read here rather than in the workers because the walk already
-// holds the directory entry, and it is what sizes the memory budget: the
-// workers admit a file by the bytes it declares before paying to read them.
-//
-// Which means the entry has to describe the thing that will actually be read.
-// WalkDir does not follow symlinks, so d.Info() lstats the link and reports the
-// length of its target's path, while the read follows it. A repository could
-// ship `playbook.yml -> /dev/zero` and be admitted as a 9 byte file. Resolving
-// the link fixes both halves: the budget sees the real size, and a link to
-// something that is not a file is dropped here rather than read.
-//
-// Dropping it also matches upstream, which collects a path only when
-// Path.is_file() holds, and that follows the link too. A symlink to an ordinary
-// file stays lintable, as it is for ansible-lint.
+// The walk already holds the entry, and the workers admit a file to the memory
+// budget by this size before reading it, so it must describe what will be read.
+// d.Info() lstats a symlink, which would admit `playbook.yml -> /dev/zero` as a
+// 9 byte file; resolving the link gives the real size and drops a link to a
+// non-file, as upstream's Path.is_file() does. A symlink to an ordinary file
+// stays lintable, as it is for ansible-lint.
 func regularSize(p string, d fs.DirEntry) (int64, bool) {
 	if d.Type().IsRegular() {
 		info, err := d.Info()

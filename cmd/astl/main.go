@@ -84,12 +84,10 @@ const (
 // setMemoryLimit caps heap growth at a value the run can actually stay under.
 //
 // A soft limit below the live heap cannot shrink anything; it only makes the
-// collector run continuously. A fixed 128 MiB did that on repositories of large
-// files, costing four times the CPU while still peaking five times over its own
-// ceiling, and no single constant avoids it: the live heap depends on how big
-// the files being read are, which is knowable only after discovery. So the
-// ceiling is derived from the input, and floored so that ordinary repositories
-// keep exactly the behaviour they had.
+// collector run continuously. No single constant avoids that, because the live
+// heap depends on how big the files being read are, which is knowable only after
+// discovery. So the ceiling is derived from the input, and floored at
+// minMemoryLimit for ordinary repositories.
 func setMemoryLimit(items []discover.Item) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return
@@ -108,9 +106,8 @@ func memoryLimitFor(items []discover.Item, workers int) int64 {
 	for _, it := range items {
 		total += it.Size
 	}
-	// Average, not maximum: it estimates what is genuinely resident at once.
-	// One outsized file among thousands of small ones is throttled by
-	// bytesInFlight and never sets the steady-state heap.
+	// Average, not maximum: one outsized file is throttled by bytesInFlight and
+	// never sets the steady-state heap.
 	avg := total / int64(len(items))
 	inFlight := min(int64(bytesInFlight), int64(workers)*avg)
 	return max(minMemoryLimit, inFlight*memoryAmplification)
@@ -197,9 +194,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
-	// Built here rather than inside lint because the SARIF report declares the
-	// rules the run applied, and deriving the selection twice would let what a
-	// run does and what it says drift apart.
+	// Built here, not inside lint, so the SARIF report declares exactly the
+	// selection the run applied rather than a second derivation that could drift.
 	sel := rules.Selection{
 		Profile:    cfg.Profile,
 		EnableList: cfg.EnableList,
@@ -211,10 +207,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
-	// After the run rather than inside it: the ignore file names findings, not
-	// files, so nothing about it can be decided before they exist. Sorting and
-	// deduplication do not read either flag it sets, so applying it here is the
-	// same result as applying it upstream's way, mid-pipeline.
+	// After the run: the ignore file names findings, not files. Sorting and dedup
+	// read neither flag it sets, so this equals upstream's mid-pipeline order.
 	findings = ignores.Apply(findings)
 
 	if err := emit(stdout, findings, opts.format, opts.ids, discover.WorkingDir(), sel); err != nil {
@@ -226,17 +220,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // exitStatus is the exit code for a run whose findings are already printed.
 func exitStatus(findings []rules.Finding, unchecked int, stderr io.Writer) int {
-	// Ordered before exitViolations deliberately: findings are on stdout either
-	// way, but only the exit code can say the run was incomplete, and that is
-	// the part a caller gating on it must not miss.
+	// Before exitViolations: only the exit code can say the run was incomplete,
+	// and a caller gating on it must not miss that.
 	if unchecked > 0 {
 		diag(stderr, "astl: %d file(s) could not be checked\n", unchecked)
 		return exitIncomplete
 	}
-	// Warning-level findings print but do not fail, matching upstream's
-	// `Passed: 0 failure(s), N warning(s)`. A repository puts a rule in
-	// warn_list precisely so it keeps seeing it without a red build, so
-	// counting warnings here would defeat the key it set.
+	// Warnings print but do not fail, as upstream's `Passed: 0 failure(s), N
+	// warning(s)`; counting them would defeat the warn_list that set them.
 	if failures(findings) > 0 {
 		return exitViolations
 	}
@@ -332,9 +323,8 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 	if err != nil {
 		return nil, 0, err
 	}
-	// Files a playbook pulls in are lintables too, under the kind the including
-	// section gives them, so this has to happen before anything is sized or
-	// linted.
+	// Included files are lintables under the including section's kind, so this
+	// must precede sizing and linting.
 	items = append(items, discover.ExpandIncludes(items, cfg.ExcludePaths)...)
 
 	// Sized from the discovered input, so it must come after the walk.
@@ -349,16 +339,13 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(runtime.NumCPU())
-	// Two limits, because they bound different things. NumCPU bounds how much
-	// work runs at once; bytesInFlight bounds how much memory that work holds.
-	// Without the second, peak memory is NumCPU times the largest file, which
-	// is why a repository of a few dozen megabytes could cost gigabytes.
+	// NumCPU bounds the work in flight, bytesInFlight the memory it holds;
+	// without the second, peak memory is NumCPU times the largest file.
 	sem := semaphore.NewWeighted(bytesInFlight)
 	for _, item := range items {
 		g.Go(func() error {
-			// A file larger than the whole budget still has to run, so its
-			// weight is clamped; it then holds the budget alone, which is the
-			// intended outcome rather than a deadlock.
+			// A file over the whole budget must still run: its weight is clamped
+			// and it holds the budget alone, which is intended, not a deadlock.
 			weight := max(min(item.Size, bytesInFlight), 1)
 			if err := sem.Acquire(ctx, weight); err != nil {
 				return err
@@ -400,9 +387,8 @@ func ruleOptions(cfg config.Config, warn io.Writer) (rules.Options, error) {
 	for _, w := range warnings {
 		diag(warn, "astl: %v\n", w)
 	}
-	// An unknown profile runs every rule rather than none. Upstream may add a
-	// profile astl's table predates, and muting the linter on a name it merely
-	// does not recognise would turn a stale table into a silent pass.
+	// An unknown profile runs every rule, not none: a profile newer than astl's
+	// table must not turn the linter into a silent pass.
 	if cfg.Profile != "" && !rules.KnownProfile(cfg.Profile) {
 		diag(warn, "astl: unknown profile %q, running every rule (known: %s)\n",
 			cfg.Profile, strings.Join(rules.ProfileNames(), ", "))
@@ -430,21 +416,14 @@ func lintItem(item discover.Item, opt rules.Options) (found []rules.Finding, fai
 
 // loadFailure returns the reason f could not be checked, or nil when it could.
 //
-// ansible-lint reports both unreadable and unparsable files through rules astl
-// does not implement, so neither may reach stdout without breaking pep8 output
-// parity. That constrains where the report goes, not whether there is one: a
-// file astl could not parse is a file astl did not check, and exiting 0 with
-// nothing printed claims it was checked and found clean.
+// ansible-lint reports unreadable and unparsable files through rules astl does
+// not implement, so the report must stay off stdout to keep pep8 parity. It must
+// still exist: a file astl did not check may not exit 0 as if found clean.
 //
-// A multi-document file is not a failure. Ansible cannot load one, but it is
-// well-formed YAML and the yaml[*] pass lints it exactly as upstream's embedded
-// yamllint does, so it is skipped by the ansible-shaped rules on purpose rather
-// than left unexamined.
-//
-// Neither is a file of a kind that was never YAML. Templates, Jinja2 files,
-// Python plugins and sanity ignore lists are all discovered on purpose, and
-// astl reads the ones it has rules for as text; that they do not parse as YAML
-// is the expected outcome and says nothing about whether they were checked.
+// Two parse failures are not load failures. A multi-document file is well-formed
+// YAML that the yaml[*] pass lints as upstream's embedded yamllint does, and a
+// file of a kind that was never YAML (templates, Jinja2, Python plugins, sanity
+// ignore lists) is discovered on purpose and read as text where a rule needs it.
 func loadFailure(f *parse.File) error {
 	if f.Err == nil || parse.IsMultiDocument(f.Err) {
 		return nil

@@ -48,10 +48,6 @@ type Config struct {
 // filenames are the config files ansible-lint looks for, in its own order
 // (`CONFIG_FILENAMES` in upstream's constants.py). The first one that exists
 // wins, and the rest are not merged into it.
-//
-// Reading only `.ansible-lint` was worth 607 false positives on dell/omnia,
-// which keeps its policy at `.config/ansible-lint.yml`: none of its skip_list,
-// profile or exclude_paths applied.
 var filenames = []string{
 	".ansible-lint",
 	".ansible-lint.yml",

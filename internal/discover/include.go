@@ -64,9 +64,7 @@ func mayBeScanned(kind string) bool {
 // This is what makes a task list linted as tasks when it does not live under a
 // `tasks/` directory. ansible-lint decides a file's kind from its path, then
 // overrides it for any file a playbook pulls in: the child inherits the section
-// it was included from. astl classified by path alone, so on dell/omnia, whose
-// task lists sit under `playbooks/`, 78 `key-order[task]` and 2
-// `risky-shell-pipe` findings were missed.
+// it was included from.
 //
 // The returned items are additions, not replacements. A file reached both by
 // the walk and through an include is linted under both kinds, as upstream does,
@@ -88,10 +86,8 @@ func ExpandIncludes(items []Item, excluded []string) []Item {
 	}
 
 	frontier := items
-	// A fixpoint, since an included tasks file may include another. It
-	// terminates because every round only enqueues pairs not yet in seen, and
-	// the number of (path, kind) pairs on disk is finite; the bound is a
-	// backstop against a symlink loop making that set effectively unbounded.
+	// A fixpoint: each round enqueues only (path, kind) pairs not in seen, so
+	// it terminates; the round bound is a backstop against symlink loops.
 	for round := 0; len(frontier) > 0 && round < maxIncludeRounds; round++ {
 		frontier = e.expand(frontier)
 	}

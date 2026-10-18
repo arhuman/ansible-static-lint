@@ -130,9 +130,8 @@ func ignoreRegexp(line string, anchored, dirOnly bool) string {
 		}
 	}
 	if dirOnly {
-		// A directory pattern has to match something inside the directory. The
-		// directory entry itself reaches this through matchEntry, which appends
-		// the trailing slash `.*` then matches as the empty string.
+		// A directory pattern must match inside the directory; the entry itself
+		// arrives via matchEntry's appended slash, which `.*` matches as empty.
 		b.WriteString("/.*")
 	} else {
 		// A name matches the file itself and, when it names a directory,
@@ -196,10 +195,8 @@ func translateClass(seg string, i int) (class string, end int, ok bool) {
 	}
 	body := seg[i+1 : j]
 	if negated {
-		// RE2 has no class intersection, so a negated class keeps globs
-		// segment-local by naming the separator among the excluded characters.
-		// A positive class is left as written: it would have to spell `/` out
-		// to cross a segment, which no real pattern does.
+		// RE2 has no class intersection, so a negated class also excludes `/` to
+		// stay in its segment; a positive class must spell `/` out to cross one.
 		return "[^" + strings.TrimLeft(body, "!^") + "/]", j, true
 	}
 	return "[" + body + "]", j, true

@@ -2,23 +2,16 @@ package rules
 
 import "strings"
 
-// Profiles are ansible-lint's named rule sets. Setting `profile:` in
-// `.ansible-lint` does not tune a rule, it selects which rules run at all:
-// upstream enables the profile's rules and disables everything else, so a rule
-// belonging to no profile (astl's `complexity` and `run-once`) is unreachable
-// whenever any profile is set.
+// Profiles are ansible-lint's named rule sets. Setting `profile:` selects which
+// rules run at all: upstream disables every rule outside the profile, so a rule
+// in no profile (astl's `complexity` and `run-once`) is unreachable whenever one
+// is set.
 //
-// Upstream defines them in `data/profiles.yml` as a chain of `extends`, from
-// `min` up to `production`. profileRules stores each chain already flattened,
-// and only the rule ids astl can emit: an upstream rule astl does not
-// implement cannot change what astl prints, and listing it would invite the
-// table to be read as a rule inventory. The counts in each comment are the
-// full upstream figures, so a chain that grows upstream is visible as a
-// mismatch rather than as a silently short list.
-//
-// The compatibility corpus checks this table against upstream's own file; see
-// astl-compatibility-check. Nothing here is derived from upstream's code, only
-// from which rule names it groups together.
+// profileRules flattens each `extends` chain of upstream's `data/profiles.yml`,
+// from `min` to `production`, keeping only the rule ids astl can emit. The
+// counts in each comment are the full upstream figures, so a chain that grows
+// upstream shows as a mismatch. astl-compatibility-check verifies this table
+// against upstream's file; only the grouping of rule names comes from upstream.
 var profileRules = map[string][]string{
 	// min: 4 upstream rules, 0 implemented by astl. Its rules are
 	// internal-error, load-failure, parser-error and syntax-check, none of

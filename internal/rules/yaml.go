@@ -16,9 +16,8 @@ func yamlRules(f *parse.File, opt Options) []Finding {
 	if !isYAMLBaseKind(f.Path, f.Kind) {
 		return nil
 	}
-	// yamllint's `ignore` patterns skip the yaml family for a file while every
-	// other rule still lints it, so this is scoped to yamlRules rather than to
-	// discovery. A nil config is an ignored path.
+	// yamllint's `ignore` drops only the yaml family for a file, so it is scoped
+	// here rather than in discovery. A nil config is an ignored path.
 	cfg := opt.yamllintConfig().ForFile(f.Path)
 	if cfg == nil {
 		return nil

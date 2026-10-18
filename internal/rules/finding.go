@@ -202,9 +202,8 @@ func pyReprScalar(n *yaml.Node) string {
 	case "!!int", "!!float":
 		return n.Value
 	default:
-		// A plain `no` is a string to yaml.v3 and False to the PyYAML
-		// ansible parses with, so it has to render as Python's False here
-		// rather than as the quoted word.
+		// A plain `no` is a string to yaml.v3 but False to ansible's PyYAML,
+		// so it renders as Python's False, not as the quoted word.
 		if v, ok := parse.PyBool(n); ok {
 			return pyBoolLiteral(v)
 		}

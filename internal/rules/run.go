@@ -31,10 +31,8 @@ func File(f *parse.File, opt Options) []Finding {
 	if f.Kind == "sanity-ignore-file" {
 		return applySkips(f, sanityRules(f))
 	}
-	// The yaml[*] pass sees every well-formed YAML file, upstream's embedded
-	// yamllint being indifferent to whether ansible could load it: it runs on
-	// multi-document files and on files whose tasks are unparsable, both of
-	// which the ansible-shaped rules below must still skip.
+	// yaml[*] sees every well-formed file, as upstream's yamllint does, including
+	// multi-document and unparsable-task files the rules below must still skip.
 	var out []Finding
 	if f.Err == nil || parse.IsMultiDocument(f.Err) {
 		out = append(out, yamlRules(f, opt)...)
@@ -84,9 +82,8 @@ func applySkips(f *parse.File, findings []Finding) []Finding {
 		fileSkips = canonicalSkips(f.AllSkips())
 	}
 	scopes := skipScopes{file: fileSkips, task: taskSkipRanges(f)}
-	// The generic per-line filter of upstream's runner: a noqa token on the
-	// finding's own line silences that exact tag, whatever the file kind. It
-	// is what suppresses yaml[*] findings outside any task or metadata scope.
+	// Upstream's per-line filter: a same-line noqa silences that exact tag in
+	// any file kind; it alone suppresses yaml[*] outside task and metadata scopes.
 	scopes.line = make(map[int]map[string]bool, len(f.Noqa))
 	for line, set := range f.Noqa {
 		scopes.line[line] = canonicalSkips(set)
@@ -120,9 +117,8 @@ func (s skipScopes) silence(fd Finding) bool {
 	if fd.lineScoped {
 		return skipped(s.line[fd.Line], fd)
 	}
-	// The task and metadata skip scopes never reach upstream's yamllint
-	// rule: a skip_ansible_lint tag or a task-scoped noqa leaves yaml[*]
-	// findings standing, only the same-line tag-exact noqa above applies.
+	// Task and metadata skip scopes never reach upstream's yamllint rule; only
+	// the same-line tag-exact noqa above silences yaml[*].
 	return fd.RuleID() != "yaml" && (skipped(s.file, fd) || skipped(s.task[fd.Line], fd))
 }
 
@@ -135,10 +131,8 @@ func taskSkipRanges(f *parse.File) map[int]map[string]bool {
 	out := map[int]map[string]bool{}
 	for _, t := range f.Tasks() {
 		end := parse.EndLine(t.Node)
-		// A block's range spans its children, which are tasks in their own
-		// right and appear separately in this loop. Collecting over the whole
-		// span would let one child's noqa suppress its siblings, where upstream
-		// attaches skips to each flattened task on its own.
+		// A block's span covers its child tasks, so collecting over it lets one
+		// child's noqa suppress siblings; upstream skips each flattened task alone.
 		collectTo := end
 		if t.IsBlock {
 			collectTo = parse.BlockHeaderEnd(t.Node)

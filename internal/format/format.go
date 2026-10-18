@@ -129,16 +129,12 @@ func writePEP8(w io.Writer, f rules.Finding, style rules.IDStyle) error {
 // tab, DEL, and the C1 range, which includes ESC and so covers ANSI and OSC
 // sequences. SARIF needs no such pass, its JSON encoder escapes them.
 //
-// It runs on the path as well as the message, and the path is the sharper of
-// the two. A message is interpolated from a document astl parsed, but a path is
-// a filename, and a repository may hold one containing a newline: unsanitized,
-// a single finding then renders as two pep8 lines, which is enough to forge a
-// finding against a file the repository does not own. pep8 output is parsed by
-// editors and CI annotators, so one finding must stay one line.
+// It runs on the path too: a filename holding a newline would split one finding
+// into two pep8 lines, enough to forge a finding against another file for the
+// editors and CI annotators that parse them.
 //
-// This is a deliberate divergence from ansible-lint, which prints such a path
-// verbatim. It costs nothing on the parity corpus, whose paths are all
-// ordinary, and refusing it would mean reproducing a defect for its own sake.
+// This deliberately diverges from ansible-lint, which prints the path verbatim;
+// the parity corpus has no such paths.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {

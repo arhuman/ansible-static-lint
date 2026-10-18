@@ -234,9 +234,8 @@ func entrySkipsVarNaming(f *parse.File, entry *yaml.Node) bool {
 	if skipTagIn(parse.MapGet(entry, "tags")) {
 		return true
 	}
-	// Upstream attaches aggregated noqa skips to tasks, never to plays, so
-	// only a task-shaped entry of a tasks or handlers file is skipped
-	// whole, and only by its bare rule id.
+	// Upstream attaches aggregated noqa skips to tasks, never plays: only a task
+	// entry of a tasks or handlers file is skipped whole, by its bare rule id.
 	if f.Kind == "playbook" {
 		return false
 	}

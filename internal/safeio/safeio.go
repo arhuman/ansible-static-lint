@@ -48,7 +48,7 @@ const (
 // stop it, and a regular file large enough to exhaust memory is not a device,
 // so the mode check alone would not stop that.
 //
-// Every failure is an *fs.PathError, matching the os.ReadFile this replaced.
+// Every failure is an *fs.PathError, as from os.ReadFile.
 // The CLI relies on it: a file that could not be read is reported differently
 // from one that was read and did not parse, and only the second is a statement
 // about the file's YAML.
@@ -75,10 +75,8 @@ func ReadFile(path string, limit int64) ([]byte, error) {
 		return nil, &fs.PathError{Op: "read", Path: path, Err: errNotRegular}
 	}
 
-	// limit+1 so that a file of exactly limit bytes reads whole and one byte
-	// over is distinguishable from one that just fits. Bounding the read as well
-	// as the verdict is the point: reading the file and then declaring it too
-	// big would allocate exactly what the limit exists to refuse.
+	// limit+1 tells a file of exactly limit bytes from one over it, and bounds
+	// the read itself: reading first would allocate what the limit refuses.
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err

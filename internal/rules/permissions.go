@@ -126,9 +126,8 @@ func riskyOctal(f *parse.File, t *parse.Task) []Finding {
 // to write in octal.
 func invalidPermission(mode int64) bool {
 	other, group, user := mode%8, (mode>>3)%8, (mode>>6)%8
-	// An execute-only class is legitimate: always for the user, and for group
-	// and other when the user can execute too. That is how a traversable but
-	// unlistable directory is set.
+	// Execute-only is legitimate for the user, and for group and other when the
+	// user executes too: that is a traversable but unlistable directory.
 	userExecutes := (mode>>6)%2 == 1
 	return writeWithoutRead(other, userExecutes) ||
 		writeWithoutRead(group, userExecutes) ||

@@ -98,9 +98,8 @@ func parse(name string, data []byte) (Rules, error) {
 
 // add records one line, or reports why it cannot be read.
 func (r Rules) add(line string) error {
-	// Upstream cuts at the first '#' anywhere on the line, not at a space
-	// followed by one, and offers no escape. A path containing '#' is
-	// therefore unusable. That is the format, not an oversight to repair.
+	// Upstream cuts at the first '#' anywhere, with no escape, so a path holding
+	// '#' is unusable. That is the format, not an oversight (ADR 0006).
 	if i := strings.IndexByte(line, '#'); i >= 0 {
 		line = line[:i]
 	}
@@ -123,9 +122,8 @@ func (r Rules) add(line string) error {
 		}
 	}
 	k := entry{path: fields[0], tag: rules.Canonical(fields[1])}
-	// One path may carry the same rule twice, once qualified and once not.
-	// Upstream keeps both in a set and answers with whichever it happens to
-	// iterate first, so its verdict there is unstable; skip wins here.
+	// The same rule both qualified and not: upstream answers with whichever its
+	// set iterates first, so its verdict is unstable; skip wins here.
 	r.entries[k] = r.entries[k] || skip
 	return nil
 }

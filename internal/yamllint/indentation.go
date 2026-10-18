@@ -178,9 +178,8 @@ func (r *indentationRule) checkToken(buf []rune, t *token) ([]Problem, error) {
 		r.curLine = -1
 	}
 	curr, prev, next, nextnext := t.curr, t.prev, t.next, t.nextnext
-	// A nil next occurs only on the last token of an error-truncated stream,
-	// which pyyaml never yields (and astl never lints); bail like an assert
-	// instead of dereferencing it below.
+	// A nil next ends only an error-truncated stream, which pyyaml never yields;
+	// bail like an assert instead of dereferencing it below.
 	if next == nil && is(curr, yamlscan.FlowMappingStart, yamlscan.FlowSequenceStart,
 		yamlscan.BlockEntry, yamlscan.Value) {
 		return nil, errAssert{}

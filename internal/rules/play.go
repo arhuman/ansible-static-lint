@@ -82,10 +82,8 @@ func roleNamePathPlay(f *parse.File, play *yaml.Node) []Finding {
 	var out []Finding
 	for _, role := range roles.Content {
 		name := ""
-		// pos is per-entry: a bare string role reports at the play, a mapping
-		// role at the mapping. Hoisting this out of the loop leaks one entry's
-		// position into the next and misplaces a string entry that follows a
-		// mapping one.
+		// Per entry: a string role reports at the play, a mapping role at the
+		// mapping, so hoisting this leaks one entry's position into the next.
 		pos := parse.NodePos(play)
 		if parse.IsMap(role) {
 			pos = parse.NodePos(role)

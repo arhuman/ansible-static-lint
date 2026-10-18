@@ -452,9 +452,8 @@ func joinArgs(parts []string) string {
 		b.WriteString(p)
 		last = p
 	}
-	// No trim: ansible's join_args keeps the trailing newline a clip-chomped
-	// block scalar carries, and command-instead-of-shell's shell-character
-	// check depends on seeing it.
+	// No trim: ansible's join_args keeps a clip-chomped block's trailing newline,
+	// and command-instead-of-shell's shell-character check depends on it.
 	return b.String()
 }
 

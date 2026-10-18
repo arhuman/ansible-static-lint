@@ -190,11 +190,8 @@ func (c *Config) extend(base *Config) *Config {
 		}
 		base.rules[id] = conf
 	}
-	// The top-level ignore does not merge and does not follow the usual
-	// direction: yamllint's extend keeps the *extended* file's list whenever it
-	// has one, so a parent's ignore wins over the child's rather than the other
-	// way round. It only reaches the child when the parent set none, which is
-	// the ordinary case since neither `default` nor `relaxed` ships one.
+	// Top-level ignore does not merge: extend keeps the *extended* file's list
+	// when it has one, so the child's applies only when the parent set none.
 	if base.ignore == nil {
 		base.ignore = c.ignore
 	}
