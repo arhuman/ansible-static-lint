@@ -8,6 +8,12 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Fixed - 2026-10-18
+
+- An include or import resolving outside the working directory is no longer
+  followed. A linted playbook could name `../secret.yml` or `/etc/hosts` and
+  have astl read and report on it; ansible-lint skips those files too.
+
 ### Fixed - 2026-09-24
 
 - The action publishes its `exit-code` output again, and `fail-on-findings:

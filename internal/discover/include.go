@@ -135,7 +135,7 @@ func (e *expander) expand(parents []Item) []Item {
 // new item and whether it is new.
 func (e *expander) admit(parent Item, t target) (Item, bool) {
 	abs, ok := resolveInclude(filepath.Dir(parent.Abs), t.file)
-	if !ok {
+	if !ok || !insideDir(e.wd, abs) {
 		return Item{}, false
 	}
 	key := abs + "\x00" + t.kind
@@ -328,6 +328,20 @@ func resolveInclude(baseDir, file string) (string, bool) {
 		}
 		base = parent
 	}
+}
+
+// insideDir reports whether abs sits under dir, compared by path component so
+// that a sibling sharing dir's prefix is outside. An unknown dir admits nothing.
+//
+// This is upstream's is_excluded project-directory check, and the reason it
+// matters is not parity alone: the input is untrusted, and without it a playbook
+// could name `../../etc/hosts` and have astl read and report on it.
+func insideDir(dir, abs string) bool {
+	if dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(dir, abs)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // existingFile reports whether p is a regular file, and returns it with

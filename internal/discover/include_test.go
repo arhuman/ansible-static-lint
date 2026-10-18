@@ -262,6 +262,37 @@ func TestExcludedIncludeIsSkipped(t *testing.T) {
 	}
 }
 
+// TestExpandIncludesStaysInsideProjectDir pins that a child resolving outside
+// the working directory is never read, whether named with `../`, found by the
+// walk up through ancestors, or in a sibling sharing the directory's prefix.
+// Upstream's is_excluded skips the same children.
+func TestExpandIncludesStaysInsideProjectDir(t *testing.T) {
+	root := repo(t, map[string]string{
+		"proj/pb.yml": "---\n" +
+			"- name: P\n" +
+			"  hosts: localhost\n" +
+			"  tasks:\n" +
+			"    - name: Up\n" +
+			"      ansible.builtin.include_tasks: ../outside/secret.yml\n" +
+			"    - name: Ancestor\n" +
+			"      ansible.builtin.include_tasks: ancestor.yml\n" +
+			"    - name: Sibling\n" +
+			"      ansible.builtin.include_tasks: ../proj-evil/child.yml\n" +
+			"    - name: Inside\n" +
+			"      ansible.builtin.include_tasks: child.yml\n",
+		"proj/child.yml":      childTasks,
+		"outside/secret.yml":  childTasks,
+		"ancestor.yml":        childTasks,
+		"proj-evil/child.yml": childTasks,
+	})
+	t.Chdir(filepath.Join(root, "proj"))
+
+	got := expanded(t)
+	if len(got) != 1 || got["child.yml"] != "tasks" {
+		t.Fatalf("expanded = %v, want only child.yml as tasks", got)
+	}
+}
+
 // TestMissingIncludeIsSilent covers a target that does not exist. Upstream
 // creates the lintable and then skips it because the path is not there, so
 // astl reports nothing rather than treating it as an unchecked file.
