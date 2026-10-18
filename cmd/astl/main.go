@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -115,14 +116,27 @@ func memoryLimitFor(items []discover.Item, workers int) int64 {
 	return max(minMemoryLimit, inFlight*memoryAmplification)
 }
 
-// run is the whole CLI; main only supplies the process streams and exits.
 // diag writes a diagnostic. Its write error is dropped because a failing
 // stderr leaves nowhere to report it, and the exit code still carries the run.
 func diag(w io.Writer, format string, a ...any) {
 	_, _ = fmt.Fprintf(w, format, a...)
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+// cliOptions is the parsed command line, with each long flag already folded
+// into its short form.
+type cliOptions struct {
+	format, ids, config, ignore string
+	version                     bool
+	paths                       []string
+}
+
+// errUsage reports a command line that parsed but cannot run; the usage text
+// has already been written.
+var errUsage = errors.New("usage")
+
+// parseArgs parses the command line, writing flag errors and usage to stderr.
+// A request for the version needs no paths, so it is exempt from that check.
+func parseArgs(args []string, stderr io.Writer) (cliOptions, error) {
 	fs := flag.NewFlagSet("astl", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var (
@@ -140,39 +154,44 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		return cliOptions{}, err
+	}
+	opts := cliOptions{
+		format:  cmp.Or(*formatLong, *formatName),
+		ids:     *idsName,
+		config:  cmp.Or(*configLong, *configPath),
+		ignore:  cmp.Or(*ignoreLong, *ignorePath),
+		version: *showVersion,
+		paths:   fs.Args(),
+	}
+	if !opts.version && len(opts.paths) == 0 {
+		fs.Usage()
+		return cliOptions{}, errUsage
+	}
+	return opts, nil
+}
+
+// run is the whole CLI; main only supplies the process streams and exits.
+func run(args []string, stdout, stderr io.Writer) int {
+	opts, err := parseArgs(args, stderr)
+	if err != nil {
 		return exitError
 	}
-	if *showVersion {
+	if opts.version {
 		if _, err := fmt.Fprintf(stdout, "astl %s\n", build); err != nil {
 			return exitError
 		}
 		return exitClean
 	}
-	if *formatLong != "" {
-		*formatName = *formatLong
-	}
-	if *configLong != "" {
-		*configPath = *configLong
-	}
-	paths := fs.Args()
-	if len(paths) == 0 {
-		fs.Usage()
-		return exitError
-	}
 
-	cfg, err := loadConfig(*configPath)
+	cfg, err := loadConfig(opts.config)
 	if err != nil {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
 
-	if *ignoreLong != "" {
-		*ignorePath = *ignoreLong
-	}
-	if *ignorePath == "" {
-		*ignorePath = cfg.IgnoreFile
-	}
-	ignores, err := loadIgnores(*ignorePath, stderr)
+	ignorePath := cmp.Or(opts.ignore, cfg.IgnoreFile)
+	ignores, err := loadIgnores(ignorePath, stderr)
 	if err != nil {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
@@ -187,7 +206,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		SkipList:   cfg.SkipList,
 		WarnList:   cfg.WarnList,
 	}
-	findings, unchecked, err := lint(paths, cfg, sel, stderr)
+	findings, unchecked, err := lint(opts.paths, cfg, sel, stderr)
 	if err != nil {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
@@ -198,10 +217,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// same result as applying it upstream's way, mid-pipeline.
 	findings = ignores.Apply(findings)
 
-	if err := emit(stdout, findings, *formatName, *idsName, discover.WorkingDir(), sel); err != nil {
+	if err := emit(stdout, findings, opts.format, opts.ids, discover.WorkingDir(), sel); err != nil {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
 	}
+	return exitStatus(findings, unchecked, stderr)
+}
+
+// exitStatus is the exit code for a run whose findings are already printed.
+func exitStatus(findings []rules.Finding, unchecked int, stderr io.Writer) int {
 	// Ordered before exitViolations deliberately: findings are on stdout either
 	// way, but only the exit code can say the run was incomplete, and that is
 	// the part a caller gating on it must not miss.
@@ -316,28 +340,9 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 	// Sized from the discovered input, so it must come after the walk.
 	setMemoryLimit(items)
 
-	ylcfg, warnings, err := yamllint.Load(".")
+	opt, err := ruleOptions(cfg, warn)
 	if err != nil {
 		return nil, 0, err
-	}
-	for _, w := range warnings {
-		diag(warn, "astl: %v\n", w)
-	}
-	// An unknown profile runs every rule rather than none. Upstream may add a
-	// profile astl's table predates, and muting the linter on a name it merely
-	// does not recognise would turn a stale table into a silent pass.
-	if cfg.Profile != "" && !rules.KnownProfile(cfg.Profile) {
-		diag(warn, "astl: unknown profile %q, running every rule (known: %s)\n",
-			cfg.Profile, strings.Join(rules.ProfileNames(), ", "))
-	}
-
-	opt := rules.Options{
-		Yamllint:         ylcfg,
-		EnableList:       cfg.EnableList,
-		LoopVarPrefix:    cfg.LoopVarPrefix,
-		MaxTasks:         cfg.MaxTasks,
-		MaxBlockDepth:    cfg.MaxBlockDepth,
-		VarNamingPattern: cfg.VarNamingPattern,
 	}
 	var mu sync.Mutex
 	var all []rules.Finding
@@ -360,18 +365,12 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 			}
 			defer sem.Release(weight)
 
-			var found []rules.Finding
-			if item.Kind == discover.KindRole {
-				found = rules.RoleDir(item.Path, item.Abs)
-			} else {
-				f := parse.Load(item.Path, item.Abs, item.Kind)
-				found = rules.File(f, opt)
-				if err := loadFailure(f); err != nil {
-					mu.Lock()
-					diag(warn, "astl: %v\n", err)
-					unchecked++
-					mu.Unlock()
-				}
+			found, failure := lintItem(item, opt)
+			if failure != nil {
+				mu.Lock()
+				diag(warn, "astl: %v\n", failure)
+				unchecked++
+				mu.Unlock()
 			}
 			if len(found) == 0 {
 				return nil
@@ -389,6 +388,44 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 	all = rules.Select(all, sel)
 	rules.Sort(all)
 	return rules.Dedupe(all), unchecked, nil
+}
+
+// ruleOptions loads the yamllint configuration and assembles the options every
+// file is linted under, reporting configuration warnings on warn.
+func ruleOptions(cfg config.Config, warn io.Writer) (rules.Options, error) {
+	ylcfg, warnings, err := yamllint.Load(".")
+	if err != nil {
+		return rules.Options{}, err
+	}
+	for _, w := range warnings {
+		diag(warn, "astl: %v\n", w)
+	}
+	// An unknown profile runs every rule rather than none. Upstream may add a
+	// profile astl's table predates, and muting the linter on a name it merely
+	// does not recognise would turn a stale table into a silent pass.
+	if cfg.Profile != "" && !rules.KnownProfile(cfg.Profile) {
+		diag(warn, "astl: unknown profile %q, running every rule (known: %s)\n",
+			cfg.Profile, strings.Join(rules.ProfileNames(), ", "))
+	}
+
+	return rules.Options{
+		Yamllint:         ylcfg,
+		EnableList:       cfg.EnableList,
+		LoopVarPrefix:    cfg.LoopVarPrefix,
+		MaxTasks:         cfg.MaxTasks,
+		MaxBlockDepth:    cfg.MaxBlockDepth,
+		VarNamingPattern: cfg.VarNamingPattern,
+	}, nil
+}
+
+// lintItem checks one lintable. failure is non-nil when the file could not be
+// checked, and is reported by the caller rather than here so it stays counted.
+func lintItem(item discover.Item, opt rules.Options) (found []rules.Finding, failure error) {
+	if item.Kind == discover.KindRole {
+		return rules.RoleDir(item.Path, item.Abs), nil
+	}
+	f := parse.Load(item.Path, item.Abs, item.Kind)
+	return rules.File(f, opt), loadFailure(f)
 }
 
 // loadFailure returns the reason f could not be checked, or nil when it could.

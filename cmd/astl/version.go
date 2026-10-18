@@ -66,22 +66,10 @@ func buildFrom(stamped buildMetadata, info *debug.BuildInfo) buildMetadata {
 			b.version = v
 		}
 	}
-	var revision string
-	var modified bool
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			revision = s.Value
-		case "vcs.time":
-			if b.date == "" {
-				b.date = s.Value
-			}
-		case "vcs.modified":
-			modified = s.Value == "true"
-		}
+	revision, vcsTime, modified := vcsSettings(info.Settings)
+	if b.date == "" {
+		b.date = vcsTime
 	}
-	// Read after the loop, not inside it: the settings carry no ordering
-	// guarantee, and the dirty marker would be lost if it came second.
 	if b.commit == "" && revision != "" {
 		b.commit = shortRevision(revision)
 		if modified {
@@ -89,6 +77,26 @@ func buildFrom(stamped buildMetadata, info *debug.BuildInfo) buildMetadata {
 		}
 	}
 	return b
+}
+
+// vcsSettings extracts the VCS revision, time and dirty flag the toolchain
+// embeds for a build from a working tree. They are read in full before any is
+// used: the settings carry no ordering guarantee, and the dirty marker would be
+// lost if it came after the revision.
+func vcsSettings(settings []debug.BuildSetting) (revision, time string, modified bool) {
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.time":
+			if time == "" {
+				time = s.Value
+			}
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	return revision, time, modified
 }
 
 // moduleVersion returns the module version to report, or "" for a build that
