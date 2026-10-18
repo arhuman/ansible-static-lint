@@ -178,9 +178,23 @@ var builtinExcludes = []string{
 // Failures on individual entries below a root are collected in soft and the
 // traversal continues, so one unreadable directory does not lose the rest of
 // the run; callers are expected to report them as warnings.
+//
+// Entries are confined to ProjectRoot(roots, nil), which looks for no
+// configuration file; a run passes the root it found to WalkWithin instead.
 func Walk(roots []string, excluded []string) (items []Item, soft []error, err error) {
+	return WalkWithin(ProjectRoot(roots, nil), roots, excluded)
+}
+
+// WalkWithin is Walk with entries confined to project, the directory
+// ProjectRoot returns for the run. An entry below a root whose resolved path
+// lies outside project is skipped, as upstream's Runner.is_excluded skips it,
+// so a symlink in the linted tree cannot have astl read and report on a file
+// elsewhere on the host. A root itself is always linted, wherever it is, as
+// upstream never excludes a path it was handed.
+func WalkWithin(project string, roots []string, excluded []string) (items []Item, soft []error, err error) {
 	w := &walk{
 		wd:         WorkingDir(),
+		project:    project,
 		excluded:   yamllint.ParsePathSpec(append(append([]string{}, builtinExcludes...), excluded...)),
 		seen:       map[string]bool{},
 		gitignores: map[string]*yamllint.PathSpec{},
@@ -207,11 +221,12 @@ func Walk(roots []string, excluded []string) (items []Item, soft []error, err er
 // walk holds the state the traversal callback accumulates, so that visiting an
 // entry stays a named method instead of a closure over six locals. wd is
 // resolved once per Walk because rendering a display path needs it for every
-// entry. root is the root currently being walked, the one path exclusions do
-// not apply to. gitignores maps a directory to the spec its own `.gitignore`
+// entry. root is the root currently being walked, the one path exclusions and
+// project containment do not apply to. gitignores maps a directory to the spec its own `.gitignore`
 // compiled to.
 type walk struct {
 	wd         string
+	project    string
 	root       string
 	excluded   *yamllint.PathSpec
 	gitignores map[string]*yamllint.PathSpec
@@ -362,7 +377,7 @@ func (w *walk) loadGitignore(dir string) {
 }
 
 func (w *walk) add(abs, kind string, size int64) {
-	if kind == "" || w.seen[abs] {
+	if kind == "" || w.seen[abs] || (abs != w.root && !insideDir(w.project, abs)) {
 		return
 	}
 	w.seen[abs] = true

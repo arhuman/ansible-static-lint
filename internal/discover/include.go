@@ -73,14 +73,24 @@ func mayBeScanned(kind string) bool {
 // Only literal targets are followed. A templated path (`{{ role_path }}/x.yml`)
 // is not decidable without the ansible runtime, which ADR 0001 puts out of
 // scope, so it is left alone rather than guessed at.
+//
+// Children are confined to the working directory. That suits a caller that
+// walked the working directory and has no configuration to find a root from; a
+// run confines them to its ProjectRoot through ExpandIncludesWithin.
 func ExpandIncludes(items []Item, excluded []string) []Item {
-	wd, err := os.Getwd()
-	if err != nil {
-		wd = ""
-	}
-	wd = resolvePath(wd)
+	return ExpandIncludesWithin(WorkingDir(), items, excluded)
+}
 
-	e := &expander{wd: wd, excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{}}
+// ExpandIncludesWithin is ExpandIncludes with children confined to project, the
+// directory ProjectRoot returns for the run. A child resolving outside it is not
+// followed, as upstream's Runner.is_excluded skips it: the input is untrusted,
+// and a playbook naming `../../etc/hosts` must not have astl read and report on
+// it.
+func ExpandIncludesWithin(project string, items []Item, excluded []string) []Item {
+	e := &expander{
+		wd: WorkingDir(), project: project,
+		excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{},
+	}
 	for _, it := range items {
 		e.seen[it.Abs+"\x00"+it.Kind] = true
 	}
@@ -101,6 +111,7 @@ const maxIncludeRounds = 32
 
 type expander struct {
 	wd       string
+	project  string
 	excluded *yamllint.PathSpec
 	seen     map[string]bool
 	added    []Item
@@ -131,7 +142,7 @@ func (e *expander) expand(parents []Item) []Item {
 // new item and whether it is new.
 func (e *expander) admit(parent Item, t target) (Item, bool) {
 	abs, ok := resolveInclude(filepath.Dir(parent.Abs), t.file)
-	if !ok || !insideDir(e.wd, abs) {
+	if !ok || !insideDir(e.project, abs) {
 		return Item{}, false
 	}
 	key := abs + "\x00" + t.kind
@@ -324,20 +335,6 @@ func resolveInclude(baseDir, file string) (string, bool) {
 		}
 		base = parent
 	}
-}
-
-// insideDir reports whether abs sits under dir, compared by path component so
-// that a sibling sharing dir's prefix is outside. An unknown dir admits nothing.
-//
-// This is upstream's is_excluded project-directory check, and the reason it
-// matters is not parity alone: the input is untrusted, and without it a playbook
-// could name `../../etc/hosts` and have astl read and report on it.
-func insideDir(dir, abs string) bool {
-	if dir == "" {
-		return false
-	}
-	rel, err := filepath.Rel(dir, abs)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // existingFile reports whether p is a regular file, and returns it with

@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -202,7 +203,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		SkipList:   cfg.SkipList,
 		WarnList:   cfg.WarnList,
 	}
-	findings, unchecked, err := lint(opts.paths, cfg, sel, stderr)
+	findings, unchecked, err := lint(opts.paths, projectRoot(opts.paths, opts.config), cfg, sel, stderr)
 	if err != nil {
 		diag(stderr, "astl: %v\n", err)
 		return exitError
@@ -232,6 +233,23 @@ func exitStatus(findings []rules.Finding, unchecked int, stderr io.Writer) int {
 		return exitViolations
 	}
 	return exitClean
+}
+
+// projectRoot is the directory the run is confined to. Upstream searches for it
+// after loading its configuration, with the file it loaded, so the same file
+// marks the root here: the one -c names, or else the one the search found.
+// Only when there is none do the config file names mark a root wherever they
+// occur.
+func projectRoot(paths []string, configFlag string) string {
+	inUse := cmp.Or(configFlag, config.Find("."))
+	if inUse == "" {
+		return discover.ProjectRoot(paths, config.Filenames())
+	}
+	abs, err := filepath.Abs(inUse)
+	if err != nil {
+		return ""
+	}
+	return discover.ProjectRoot(paths, []string{abs})
 }
 
 // loadConfig reads the named configuration file, or searches for one the way
@@ -311,11 +329,14 @@ func emit(w io.Writer, findings []rules.Finding, formatName, idsName, workDir st
 // the returned unchecked total so the caller can refuse to call the run clean;
 // only a failure that invalidates the whole run comes back as an error.
 //
+// root is the run's project root: a walked file or an include child resolving
+// outside it is not linted, while a file named in paths always is.
+//
 // sel comes from the caller rather than from cfg here because the report needs
 // it too, and deriving it twice would let the rules a run applies and the rules
 // it declares drift apart.
-func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer) (found []rules.Finding, unchecked int, err error) {
-	items, soft, err := discover.Walk(paths, cfg.ExcludePaths)
+func lint(paths []string, root string, cfg config.Config, sel rules.Selection, warn io.Writer) (found []rules.Finding, unchecked int, err error) {
+	items, soft, err := discover.WalkWithin(root, paths, cfg.ExcludePaths)
 	for _, e := range soft {
 		diag(warn, "astl: %v\n", e)
 	}
@@ -325,7 +346,7 @@ func lint(paths []string, cfg config.Config, sel rules.Selection, warn io.Writer
 	}
 	// Included files are lintables under the including section's kind, so this
 	// must precede sizing and linting.
-	items = append(items, discover.ExpandIncludes(items, cfg.ExcludePaths)...)
+	items = append(items, discover.ExpandIncludesWithin(root, items, cfg.ExcludePaths)...)
 
 	// Sized from the discovered input, so it must come after the walk.
 	setMemoryLimit(items)

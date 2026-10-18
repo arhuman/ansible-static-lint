@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -57,18 +59,34 @@ var filenames = []string{
 	".config/ansible-lint.yaml",
 }
 
+// Filenames returns the config file names Load looks for, relative to the
+// directory searched, in the order it tries them.
+func Filenames() []string {
+	return slices.Clone(filenames)
+}
+
+// Find returns the path of the config file Load(dir) reads, or "" when there is
+// none. A path that exists but cannot be inspected is returned, so that reading
+// it reports why.
+func Find(dir string) string {
+	for _, name := range filenames {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if _, err := os.Stat(p); !errors.Is(err, fs.ErrNotExist) {
+			return p
+		}
+	}
+	return ""
+}
+
 // Load reads the first of filenames that exists under dir. No config file at
 // all yields an empty config, which is not an error: a repository is free not
 // to configure the linter.
 func Load(dir string) (Config, error) {
-	for _, name := range filenames {
-		c, err := LoadFile(filepath.Join(dir, filepath.FromSlash(name)))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		return c, err
+	p := Find(dir)
+	if p == "" {
+		return Config{}, nil
 	}
-	return Config{}, nil
+	return LoadFile(p)
 }
 
 // LoadFile reads one config file by path, as `-c` does. A missing file is

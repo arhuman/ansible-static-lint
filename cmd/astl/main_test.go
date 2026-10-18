@@ -794,3 +794,90 @@ func TestSARIFScopeFollowsTheConfig(t *testing.T) {
 		t.Errorf("enable_list rule not declared enabled: %v", enabled)
 	}
 }
+
+// writeTree creates each file under dir, with its parent directories.
+func writeTree(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, body := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// lowerNamedTasks is a task list whose only finding is name[casing] at 2:9.
+const lowerNamedTasks = "---\n" +
+	"- name: lower\n" +
+	"  ansible.builtin.debug:\n" +
+	"    msg: x\n"
+
+// TestRunSkipsASymlinkOutsideTheRepository is review reproduction R1 end to
+// end: the link's target is neither read nor printed, as with ansible-lint.
+func TestRunSkipsASymlinkOutsideTheRepository(t *testing.T) {
+	dir := reported(t, t.TempDir())
+	writeTree(t, dir, map[string]string{
+		"repo/.git/HEAD":     "ref: refs/heads/main\n",
+		"repo/site.yml":      cleanPlaybook,
+		"outside/secret.yml": dirtyPlaybook,
+	})
+	if err := os.Symlink("../outside/secret.yml", filepath.Join(dir, "repo", "playbook.yml")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Chdir(filepath.Join(dir, "repo"))
+
+	code, stdout, stderr := runCLI(t, ".")
+	if stdout != "" || code != exitClean {
+		t.Fatalf("exit %d, stdout %q, stderr %q: want a clean run that never reads the link's target", code, stdout, stderr)
+	}
+}
+
+// TestDiscoveredConfigMarksTheProjectRoot pins that the config file the search
+// found, not just one named by -c, marks the root, as upstream passes the file
+// it loaded. `sub` has a config of its own, so the config names alone would
+// stop at `sub` and drop the include of `../common.yml`.
+func TestDiscoveredConfigMarksTheProjectRoot(t *testing.T) {
+	dir := reported(t, t.TempDir())
+	writeTree(t, dir, map[string]string{
+		".ansible-lint":     "skip_list: []\n",
+		"sub/.ansible-lint": "skip_list: []\n",
+		"sub/site.yml": "---\n" +
+			"- name: P\n" +
+			"  hosts: localhost\n" +
+			"  tasks:\n" +
+			"    - name: Inc\n" +
+			"      ansible.builtin.include_tasks: ../common.yml\n",
+		"common.yml": lowerNamedTasks,
+	})
+	t.Chdir(dir)
+
+	_, stdout, stderr := runCLI(t, "sub")
+	want := "common.yml:2:9: name[casing][/]: All names should start with an uppercase letter.\n"
+	if stdout != want {
+		t.Fatalf("stdout = %q (stderr %q), want %q", stdout, stderr, want)
+	}
+}
+
+// TestConfigOutsideTheTreeConfinesTheWalk pins an upstream consequence of the
+// root search: with no .git in the way, a -c file elsewhere makes its own
+// directory the root. A file named on the command line is still linted; the
+// files a walk of `.` finds are outside the root and are not.
+func TestConfigOutsideTheTreeConfinesTheWalk(t *testing.T) {
+	dir := reported(t, t.TempDir())
+	writeTree(t, dir, map[string]string{
+		"proj/site-playbook.yml": dirtyPlaybook,
+		"else/policy.yml":        "skip_list: []\n",
+	})
+	t.Chdir(filepath.Join(dir, "proj"))
+	policy := filepath.Join(dir, "else", "policy.yml")
+
+	if code, stdout, _ := runCLI(t, "-c", policy, "site-playbook.yml"); code != exitViolations || stdout == "" {
+		t.Errorf("explicit file: exit %d, stdout %q, want its findings", code, stdout)
+	}
+	if code, stdout, _ := runCLI(t, "-c", policy, "."); code != exitClean || stdout != "" {
+		t.Errorf("walked directory: exit %d, stdout %q, want nothing linted", code, stdout)
+	}
+}

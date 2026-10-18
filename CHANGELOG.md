@@ -20,9 +20,15 @@ All notable changes to this project are documented here. Format:
 
 ### Fixed - 2026-10-18
 
-- An include or import resolving outside the working directory is no longer
+- An include or import resolving outside the project root is no longer
   followed. A linted playbook could name `../secret.yml` or `/etc/hosts` and
-  have astl read and report on it; ansible-lint skips those files too.
+  have astl read and report on it; ansible-lint skips those files too. The
+  root is found as ansible-lint finds its project directory (nearest `.git`,
+  `.hg` or config file above the linted paths), so an include of
+  `../common.yml` from a repository subdirectory is followed, as upstream does.
+- A symlink in the linted tree whose target lies outside the project root is
+  no longer read or reported, matching ansible-lint. A path named on the
+  command line is still linted wherever it points.
 
 ### Fixed - 2026-09-24
 

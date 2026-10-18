@@ -43,6 +43,13 @@ the read itself and not just its verdict, so a file that resolves to a character
 device costs a stat rather than the ceiling. A path that fails either check is
 named on stderr and the run exits non-zero; it is never passed over in silence.
 
+Discovery is confined to a project root, found as ansible-lint finds its
+project directory: the nearest directory holding `.git`, `.hg` or a config file
+above the paths given on the command line, or their common directory when none
+does. A symlink whose target, or an include whose file, resolves outside that
+root is not read. Paths named on the command line are exempt, since the
+operator chose them. See `docs/adr/0010-project-root.md`.
+
 One case is knowingly out of reach. Opening a FIFO blocks until a writer
 appears, which happens before there is a descriptor to inspect. git cannot store
 a FIFO, so reaching one requires a symlink to a FIFO that already exists on the
