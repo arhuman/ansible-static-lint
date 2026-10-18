@@ -14,6 +14,9 @@ All notable changes to this project are documented here. Format:
   `var_naming_pattern` already did, instead of silently disabling
   loop-var-prefix. Patterns using Python-only syntax such as lookahead are
   rejected this way.
+- The GitHub Action runs the astl release it shipped with by default, instead
+  of the newest release. Pinning the action to a tag or SHA now pins the
+  binary too; `version: latest` keeps the old behaviour.
 
 ### Fixed - 2026-10-18
 

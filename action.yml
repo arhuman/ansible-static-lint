@@ -13,10 +13,12 @@ inputs:
     default: "."
   version:
     description: >-
-      Release to run, with or without the leading v. "latest" resolves the
-      newest release when the job runs.
+      Release to run, with or without the leading v. Defaults to the release
+      this action shipped with, so pinning the action pins the binary.
+      "latest" resolves the newest release when the job runs.
     required: false
-    default: latest
+    # Stamped by scripts/release.sh in each release commit (pin_files).
+    default: v0.7.0
   format:
     description: Output format, pep8 or sarif.
     required: false

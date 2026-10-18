@@ -23,13 +23,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: arhuman/ansible-static-lint@v0.2.0
+      - uses: arhuman/ansible-static-lint@v0.7.0
 ```
 
 The action downloads a release binary and checks it against the published
 checksums, so the job needs neither Go nor Python. Its inputs are `paths`,
 `version`, `format`, `ids`, `config`, `output`, `working-directory` and
 `fail-on-findings`; it outputs `exit-code`. See [action.yml](../action.yml).
+`version` defaults to the release the action shipped with, so the action's pin
+is also the binary's.
 Pin it to a commit SHA if your policy requires it, as this repository does for
 its own workflows.
 
@@ -77,7 +79,7 @@ while the log looks like an ordinary lint failure. Let the upload run, then
 decide:
 
 ```yaml
-      - uses: arhuman/ansible-static-lint@v0.2.0
+      - uses: arhuman/ansible-static-lint@v0.7.0
         id: astl
         with:
           format: sarif
