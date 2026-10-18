@@ -5,10 +5,9 @@ MAIN_PACKAGE ?= ./cmd/astl
 EXAMPLES    ?= examples
 
 # Quality gates. Ratchets: raise as the repo improves, never lower to green a build.
-# COVER_MIN is the coverage floor. Current total is 85.0%, which meets the 85
-# target set when the floor was 80. Worst own package is internal/parse at
-# 69.7%; raise the floor again once that is closer to the rest.
-COVER_MIN ?= 83
+# COVER_MIN is the coverage floor, set at the measured total (88.2%) rounded
+# down. Worst own package is internal/parse at 77.2%.
+COVER_MIN ?= 88
 
 # The compatibility corpus lives outside this repo (it carries GPL ansible-lint
 # test data; ansible-static-lint itself stays MIT). Override to point elsewhere.
