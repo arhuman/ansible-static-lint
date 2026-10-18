@@ -32,7 +32,8 @@ git clone https://github.com/arhuman/astl-compatibility-check ../astl-compatibil
 | `make bench` | Both speed guards: `perfguard`, then the corpus under 150 ms (best of 5 runs). Skips loudly when the sibling repo is absent. |
 | `make perfguard` | Assert noqa resolution is still linear in the suppression count. Tagged out of the ordinary suite because it reads wall-clock time; needs no sibling repo. |
 | `make fuzz` | Run each fuzz target for `FUZZTIME` (default 60s). Their seed corpora already run under `make test`. |
-| `make ci` | Full local pipeline: `tidy` + `audit` + `check` + `parity` + `bench`. |
+| `make workflows` | actionlint, shellcheck and zizmor over the workflows, the action and `scripts/`. Needs all three on `PATH`. |
+| `make ci` | Full local pipeline: `tidy` + `audit` + `workflows` + `check` + `parity` + `bench`. |
 | `make tidy` | `gofmt` + `go mod tidy`. |
 | `make release` | Derive the next semver from Conventional Commits, gate on `make ci`, tag and push. |
 

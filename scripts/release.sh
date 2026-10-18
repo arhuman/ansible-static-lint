@@ -54,15 +54,15 @@ subjects=$(git log "$range" --no-merges --format='%s')
 [ -n "$subjects" ] || die "no commits since $last; nothing to release"
 bodies=$(git log "$range" --no-merges --format='%B')
 
-bump=patch
+bump="patch"
 if printf '%s\n' "$subjects" | grep -qE '^[a-z]+(\([^)]+\))?!:' \
    || printf '%s\n' "$bodies" | grep -qE '^BREAKING CHANGE'; then
-  bump=major
+  bump="major"
 elif printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]+\))?:'; then
-  bump=minor
+  bump="minor"
 fi
 # SemVer 0.x: a breaking change bumps minor, not major, until the first 1.0.0.
-[ "$major" -eq 0 ] && [ "$bump" = major ] && bump=minor
+[ "$major" -eq 0 ] && [ "$bump" = major ] && bump="minor"
 
 case "$bump" in
   major) major=$((major + 1)); minor=0; patch=0 ;;

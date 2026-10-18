@@ -41,6 +41,8 @@ endef
 # Pinned tool versions. Keep equal to the 10x _shared/references/versions.md table.
 GOLANGCI_VERSION    ?= v2.14.0
 GOVULNCHECK_VERSION ?= v1.7.0
+ACTIONLINT_VERSION  ?= v1.7.12
+ZIZMOR_VERSION      ?= 1.31.1
 
 # Version metadata injected via ldflags. VERSION_PKG declares Version, GitCommit
 # and BuildDate; for a single-binary CLI that is package main itself.
@@ -55,7 +57,7 @@ LDFLAGS := -s -w \
 	-X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'
 
 .DEFAULT_GOAL := help
-.PHONY: audit bench build check ci clean cover fuzz help parity perfguard release test tidy tools
+.PHONY: audit bench build check ci clean cover fuzz help parity perfguard release test tidy tools workflows
 
 ## audit: run quality control checks (mod verify, lint, vuln scan, coverage gate)
 audit: cover
@@ -105,8 +107,16 @@ check: build
 	fi; \
 	echo "OK: $$(printf '%s\n' "$$out" | wc -l | tr -d ' ') findings, exit code 2, output matches $(EXAMPLES)/expected.txt"
 
-## ci: run the full local pipeline (tidy, audit, check, parity, bench)
-ci: tidy audit check parity bench
+## ci: run the full local pipeline (tidy, audit, workflows, check, parity, bench)
+ci: tidy audit workflows check parity bench
+
+## workflows: lint GitHub workflows, the action and shell scripts
+# A missing tool fails rather than skips, for the same reason parity does.
+# zizmor runs offline so the verdict does not depend on a token or the network.
+workflows:
+	actionlint
+	shellcheck scripts/*.sh
+	zizmor --offline .
 
 ## clean: remove build artifacts
 clean:

@@ -13,6 +13,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # A release younger than a week is where a compromised upload is caught.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: build
@@ -21,6 +24,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # A release younger than a week is where a compromised upload is caught.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
