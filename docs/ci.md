@@ -26,8 +26,10 @@ jobs:
       - uses: arhuman/ansible-static-lint@v0.7.2
 ```
 
-The action downloads a release binary and checks it against the published
-checksums, so the job needs neither Go nor Python. Its inputs are `paths`,
+The action downloads a release binary, verifies the release's cosign signature
+and then the binary's checksum, so the job needs neither Go nor Python.
+Verification is not optional: a `version` before v0.1.2, the first release with
+a Sigstore bundle, fails the step. Its inputs are `paths`,
 `version`, `format`, `ids`, `config`, `output`, `working-directory` and
 `fail-on-findings`; it outputs `exit-code`. See [action.yml](../action.yml).
 `version` defaults to the release the action shipped with, so the action's pin

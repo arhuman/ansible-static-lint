@@ -15,7 +15,9 @@ inputs:
     description: >-
       Release to run, with or without the leading v. Defaults to the release
       this action shipped with, so pinning the action pins the binary.
-      "latest" resolves the newest release when the job runs.
+      "latest" resolves the newest release when the job runs. The release's
+      cosign signature is always verified, so a release before v0.1.2, the
+      first to ship a Sigstore bundle, fails the step.
     required: false
     # The marker makes scripts/release.sh stamp and verify this pin.
     default: v0.7.2 # release-pin
@@ -60,10 +62,44 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install astl
+    - name: Resolve astl release
+      id: release
       shell: bash
       env:
         ASTL_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        repo=arhuman/ansible-static-lint
+        if [ "$ASTL_VERSION" = latest ]; then
+          # Resolved through the releases/latest redirect rather than the REST
+          # API, so the action does not spend the job's unauthenticated rate
+          # limit on a lookup that a plain HTTP redirect answers.
+          tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+                  "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')
+          [ -n "$tag" ] || { echo "::error::could not resolve the latest astl release" >&2; exit 1; }
+        else
+          tag="v${ASTL_VERSION#v}"
+        fi
+        # The tag lands in download URLs and in the signing identity below, so
+        # it must be a release version and nothing else.
+        if ! [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::version must be a release such as v0.7.2 or latest, got ${ASTL_VERSION}" >&2
+          exit 1
+        fi
+        major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} patch=${BASH_REMATCH[3]}
+        if [ "$major" -eq 0 ] && { [ "$minor" -eq 0 ] || { [ "$minor" -eq 1 ] && [ "$patch" -lt 2 ]; }; }; then
+          echo "::error::astl $tag cannot be verified: v0.1.2 is the first release shipping the Sigstore bundle this action checks; request v0.1.2 or later" >&2
+          exit 1
+        fi
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+    - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    - name: Install astl
+      shell: bash
+      env:
+        ASTL_TAG: ${{ steps.release.outputs.tag }}
       # GITHUB_PATH receives a directory this step creates under RUNNER_TEMP,
       # never a caller-supplied value.
       run: | # zizmor: ignore[github-env]
@@ -85,23 +121,14 @@ runs:
         esac
 
         repo=arhuman/ansible-static-lint
-        if [ "$ASTL_VERSION" = latest ]; then
-          # Resolved through the releases/latest redirect rather than the REST
-          # API, so the action does not spend the job's unauthenticated rate
-          # limit on a lookup that a plain HTTP redirect answers.
-          tag=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-                  "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')
-          [ -n "$tag" ] || { echo "::error::could not resolve the latest astl release" >&2; exit 1; }
-        else
-          tag="v${ASTL_VERSION#v}"
-        fi
+        tag=$ASTL_TAG
         version="${tag#v}"
 
         archive="ansible-static-lint_${version}_${os}_${arch}.${ext}"
         base="https://github.com/$repo/releases/download/$tag"
         # Two spellings of the same directory. Git Bash tools need the POSIX
-        # one; GITHUB_PATH is read by the runner, not by bash, so it needs the
-        # native one. `pwd -W` is the Git Bash builtin that converts.
+        # one; GITHUB_PATH and cosign are not bash, so they need the native
+        # one. `pwd -W` is the Git Bash builtin that converts.
         mkdir -p "$RUNNER_TEMP/astl"
         dir=$(cd "$RUNNER_TEMP/astl" && pwd)
         if [ "$os" = windows ]; then
@@ -112,12 +139,14 @@ runs:
 
         curl -fsSL "$base/$archive" -o "$dir/$archive"
         curl -fsSL "$base/checksums.txt" -o "$dir/checksums.txt"
+        curl -fsSL "$base/checksums.txt.sigstore.json" -o "$dir/checksums.txt.sigstore.json"
 
-        # This catches a truncated or corrupted download. It is not a
-        # supply-chain guarantee: checksums.txt travels from the same release as
-        # the archive, so a tampered release would carry a matching sum. For
-        # that, verify checksums.txt against checksums.txt.sigstore.json with
-        # cosign; docs/supply-chain.md has the command.
+        # Only release.yml's run for this tag can have signed checksums.txt; the
+        # sums alone would match a tampered release. cosign takes native paths.
+        cosign verify-blob "$dir_native/checksums.txt" \
+          --bundle "$dir_native/checksums.txt.sigstore.json" \
+          --certificate-identity "https://github.com/$repo/.github/workflows/release.yml@refs/tags/$tag" \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
         if command -v sha256sum >/dev/null 2>&1; then sum=(sha256sum); else sum=(shasum -a 256); fi
         (cd "$dir" && grep " ${archive}\$" checksums.txt | "${sum[@]}" -c -)
 

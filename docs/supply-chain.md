@@ -24,10 +24,11 @@ sha256sum --check --ignore-missing checksums.txt
 Each archive also ships an SBOM alongside it as
 `<archive>.sbom.json`.
 
-The GitHub Action downloads a release binary and checks it against these
-published checksums. That catches a corrupted download but not a tampered
-release: the action does not run cosign, so provenance needs the bundle check
-above.
+The GitHub Action runs both checks above before it runs a release binary. It
+verifies `checksums.txt` against its bundle with the exact identity of
+`release.yml` at the requested tag, rather than the prefix the command above
+accepts, then the archive against `checksums.txt`. A release before v0.1.2
+ships no bundle, so the action refuses it instead of skipping the signature.
 
 ## Homebrew cask
 
