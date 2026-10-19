@@ -22,21 +22,13 @@ func expandBraces(pattern string) []string {
 	return out
 }
 
-// matchGlob reports whether a slash-separated path matches a shell-style
-// pattern supporting `*` (within a segment), `**` (any number of segments)
-// and `{a,b}` alternations.
-//
-// It expands and splits the pattern on every call. Callers matching a fixed
-// set of patterns repeatedly should precompile with compileGlob instead.
-func matchGlob(pattern, path string) bool {
-	return compileGlob(pattern).match(path)
-}
-
 // compiledGlob is a pattern with its brace expansion and segment split already
 // done: the whole of the per-call work that depends only on the pattern.
 type compiledGlob [][]string
 
-// compileGlob precomputes the alternations of pattern as segment lists.
+// compileGlob precomputes the alternations of pattern as segment lists. The
+// result matches a slash-separated path against `*` (within a segment), `**`
+// (any number of segments) and `{a,b}` alternations.
 func compileGlob(pattern string) compiledGlob {
 	alts := expandBraces(pattern)
 	out := make(compiledGlob, len(alts))

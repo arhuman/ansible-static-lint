@@ -13,6 +13,28 @@ import (
 	"github.com/arhuman/ansible-static-lint/internal/safeio"
 )
 
+// Kind names compared by the rules. They live here, beside File.Kind, because
+// discover assigns them and imports this package. Kinds outside this set are
+// still assigned but carry no rule.
+const (
+	KindPlaybook         = "playbook"
+	KindTasks            = "tasks"
+	KindHandlers         = "handlers"
+	KindMeta             = "meta"
+	KindMetaRuntime      = "meta-runtime"
+	KindGalaxy           = "galaxy"
+	KindRole             = "role"
+	KindYAML             = "yaml"
+	KindVars             = "vars"
+	KindRequirements     = "requirements"
+	KindReno             = "reno"
+	KindTestMeta         = "test-meta"
+	KindJinja2           = "jinja2"
+	KindText             = "text"
+	KindPython           = "python"
+	KindSanityIgnoreFile = "sanity-ignore-file"
+)
+
 // File is a loaded lintable YAML file.
 type File struct {
 	// Path is the path used in output.
@@ -90,8 +112,8 @@ func LoadBytes(path, abs, kind string, data []byte) *File {
 		f.Root = docs[0].Content[0]
 	}
 	// A yaml kind that parses as a list of plays is really a playbook.
-	if f.Kind == "yaml" && looksLikePlaybook(f.Root) {
-		f.Kind = "playbook"
+	if f.Kind == KindYAML && looksLikePlaybook(f.Root) {
+		f.Kind = KindPlaybook
 	}
 	return f
 }

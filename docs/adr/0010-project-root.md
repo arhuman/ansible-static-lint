@@ -95,6 +95,6 @@ Out of scope:
 - `-c` with a file outside a tree that has no `.git` confines a directory walk
   to that file's directory, which lints nothing from the tree. This is
   upstream's behaviour and is reproduced, not repaired.
-- `Walk` and `ExpandIncludes` keep their signatures for callers with no
-  configuration: `Walk` confines to `ProjectRoot(roots, nil)` and
-  `ExpandIncludes` to the working directory. The run uses the `Within` variants.
+- `Walk` and `ExpandIncludes` first kept their signatures for callers with no
+  configuration. Nothing outside the tests called them, so they were removed and
+  the `Within` variants are the only entry points.

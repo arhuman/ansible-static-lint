@@ -55,7 +55,7 @@ including the behaviours that look like defects:
 
 Include expansion is deliberately left alone. Upstream filters include
 children through `exclude_paths` only (`Runner.is_excluded`); the builtins and
-`.gitignore` live solely in directory discovery. astl's `ExpandIncludes`
+`.gitignore` live solely in directory discovery. astl's `ExpandIncludesWithin`
 already mirrors that split.
 
 Known residual divergence, carried knowingly: upstream follows directory

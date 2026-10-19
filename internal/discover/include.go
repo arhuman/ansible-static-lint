@@ -43,21 +43,21 @@ var nestedTaskKeys = []string{"block", "rescue", "always"}
 // scannedKinds are the kinds whose files can name children. Upstream's
 // find_children returns nothing for anything else.
 var scannedKinds = map[string]bool{
-	KindPlaybook: true,
-	KindTasks:    true,
-	KindHandlers: true,
+	parse.KindPlaybook: true,
+	parse.KindTasks:    true,
+	parse.KindHandlers: true,
 }
 
 // mayBeScanned reports whether a file discovered under this kind is worth
-// loading. KindYAML is in because it is the catch-all: a playbook whose path
+// loading. parse.KindYAML is in because it is the catch-all: a playbook whose path
 // matches no playbook glob is discovered as yaml and only promoted once parsed,
 // which is exactly the shape that carries includes in the repositories where
 // this matters. The kind that decides is the one parse.Load returns.
 func mayBeScanned(kind string) bool {
-	return scannedKinds[kind] || kind == KindYAML
+	return scannedKinds[kind] || kind == parse.KindYAML
 }
 
-// ExpandIncludes returns the extra lintables reachable from items through
+// ExpandIncludesWithin returns the extra lintables reachable from items through
 // `include_tasks`, `import_tasks`, `include` and `import_playbook`, following
 // them to a fixpoint.
 //
@@ -74,18 +74,10 @@ func mayBeScanned(kind string) bool {
 // is not decidable without the ansible runtime, which ADR 0001 puts out of
 // scope, so it is left alone rather than guessed at.
 //
-// Children are confined to the working directory. That suits a caller that
-// walked the working directory and has no configuration to find a root from; a
-// run confines them to its ProjectRoot through ExpandIncludesWithin.
-func ExpandIncludes(items []Item, excluded []string) []Item {
-	return ExpandIncludesWithin(WorkingDir(), items, excluded)
-}
-
-// ExpandIncludesWithin is ExpandIncludes with children confined to project, the
-// directory ProjectRoot returns for the run. A child resolving outside it is not
-// followed, as upstream's Runner.is_excluded skips it: the input is untrusted,
-// and a playbook naming `../../etc/hosts` must not have astl read and report on
-// it.
+// Children are confined to project, the directory ProjectRoot returns for the
+// run. A child resolving outside it is not followed, as upstream's
+// Runner.is_excluded skips it: the input is untrusted, and a playbook naming
+// `../../etc/hosts` must not have astl read and report on it.
 func ExpandIncludesWithin(project string, items []Item, excluded []string) []Item {
 	e := &expander{
 		wd: WorkingDir(), project: project,
@@ -192,7 +184,7 @@ type target struct {
 
 // targets returns the children named in f.
 func targets(f *parse.File) []target {
-	if f.Kind == KindPlaybook {
+	if f.Kind == parse.KindPlaybook {
 		return playbookTargets(f.Root)
 	}
 	return taskListTargets(f.Root, f.Kind)
@@ -202,7 +194,7 @@ func targets(f *parse.File) []target {
 // directly, which is `- import_playbook: other.yml` and inherits the playbook
 // kind, and those its task sections name.
 func playbookTargets(root *yaml.Node) []target {
-	return seqTargets(root, KindPlaybook)
+	return seqTargets(root, parse.KindPlaybook)
 }
 
 // taskListTargets walks a task list, descending into block/rescue/always the

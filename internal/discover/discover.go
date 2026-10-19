@@ -10,21 +10,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arhuman/ansible-static-lint/internal/parse"
 	"github.com/arhuman/ansible-static-lint/internal/safeio"
 	"github.com/arhuman/ansible-static-lint/internal/yamllint"
-)
-
-// Kind names used by the rules. Kinds outside this set are still assigned but
-// carry no MVP rule.
-const (
-	KindPlaybook    = "playbook"
-	KindTasks       = "tasks"
-	KindHandlers    = "handlers"
-	KindMeta        = "meta"
-	KindMetaRuntime = "meta-runtime"
-	KindGalaxy      = "galaxy"
-	KindRole        = "role"
-	KindYAML        = "yaml"
 )
 
 type kindRule struct {
@@ -35,42 +23,42 @@ type kindRule struct {
 // kindTable mirrors ansible-lint's config.DEFAULT_KINDS. Order matters: the
 // first matching pattern wins.
 var kindTable = []kindRule{
-	{"jinja2", "**/*.j2"},
-	{"jinja2", "**/*.j2.*"},
-	{"yaml", ".github/**/*.{yaml,yml}"},
-	{"text", "**/templates/**/*.*"},
+	{parse.KindJinja2, "**/*.j2"},
+	{parse.KindJinja2, "**/*.j2.*"},
+	{parse.KindYAML, ".github/**/*.{yaml,yml}"},
+	{parse.KindText, "**/templates/**/*.*"},
 	{"execution-environment", "**/execution-environment.yml"},
 	{"ansible-lint-config", "**/.ansible-lint"},
 	{"ansible-lint-config", "**/.ansible-lint.{yaml,yml}"},
 	{"ansible-lint-config", "**/.config/ansible-lint.{yaml,yml}"},
 	{"ansible-navigator-config", "**/ansible-navigator.{yaml,yml}"},
 	{"inventory", "**/inventory/**.{yaml,yml}"},
-	{"requirements", "**/meta/requirements.{yaml,yml}"},
-	{KindGalaxy, "**/galaxy.yml"},
-	{"reno", "**/releasenotes/*/*.{yaml,yml}"},
-	{"vars", "**/{host_vars,group_vars,vars,defaults}/**/*.{yaml,yml}"},
-	{KindTasks, "**/tasks/**/*.{yaml,yml}"},
+	{parse.KindRequirements, "**/meta/requirements.{yaml,yml}"},
+	{parse.KindGalaxy, "**/galaxy.yml"},
+	{parse.KindReno, "**/releasenotes/*/*.{yaml,yml}"},
+	{parse.KindVars, "**/{host_vars,group_vars,vars,defaults}/**/*.{yaml,yml}"},
+	{parse.KindTasks, "**/tasks/**/*.{yaml,yml}"},
 	{"rulebook", "**/rulebooks/*.{yml,yaml}"},
 	{"play-argspec", "**/*.meta.{yaml,yml}"},
-	{KindPlaybook, "**/playbooks/*.{yml,yaml}"},
-	{KindPlaybook, "**/*playbook*.{yml,yaml}"},
-	{KindPlaybook, "**/extensions/patterns/*/playbooks/*.{yml,yaml}"},
-	{KindHandlers, "**/handlers/*.{yaml,yml}"},
-	{"test-meta", "**/tests/integration/targets/*/meta/main.{yaml,yml}"},
-	{KindMeta, "**/meta/main.{yaml,yml}"},
-	{KindMetaRuntime, "**/meta/runtime.{yaml,yml}"},
+	{parse.KindPlaybook, "**/playbooks/*.{yml,yaml}"},
+	{parse.KindPlaybook, "**/*playbook*.{yml,yaml}"},
+	{parse.KindPlaybook, "**/extensions/patterns/*/playbooks/*.{yml,yaml}"},
+	{parse.KindHandlers, "**/handlers/*.{yaml,yml}"},
+	{parse.KindTestMeta, "**/tests/integration/targets/*/meta/main.{yaml,yml}"},
+	{parse.KindMeta, "**/meta/main.{yaml,yml}"},
+	{parse.KindMetaRuntime, "**/meta/runtime.{yaml,yml}"},
 	{"role-arg-spec", "**/meta/argument_specs.{yaml,yml}"},
-	{"yaml", ".config/molecule/config.{yaml,yml}"},
-	{"requirements", "**/molecule/*/{collections,requirements}.{yaml,yml}"},
-	{"yaml", "**/molecule/*/{base,molecule}.{yaml,yml}"},
-	{"requirements", "**/requirements.{yaml,yml}"},
-	{KindPlaybook, "**/molecule/*/*.{yaml,yml}"},
-	{"yaml", "**/{.ansible-lint,.yamllint}"},
+	{parse.KindYAML, ".config/molecule/config.{yaml,yml}"},
+	{parse.KindRequirements, "**/molecule/*/{collections,requirements}.{yaml,yml}"},
+	{parse.KindYAML, "**/molecule/*/{base,molecule}.{yaml,yml}"},
+	{parse.KindRequirements, "**/requirements.{yaml,yml}"},
+	{parse.KindPlaybook, "**/molecule/*/*.{yaml,yml}"},
+	{parse.KindYAML, "**/{.ansible-lint,.yamllint}"},
 	{"changelog", "**/changelogs/changelog.{yaml,yml}"},
-	{"yaml", "**/*.{yaml,yml}"},
-	{"yaml", "**/.*.{yaml,yml}"},
-	{"sanity-ignore-file", "**/tests/sanity/ignore-*.txt"},
-	{"python", "**/*.py"},
+	{parse.KindYAML, "**/*.{yaml,yml}"},
+	{parse.KindYAML, "**/.*.{yaml,yml}"},
+	{parse.KindSanityIgnoreFile, "**/tests/sanity/ignore-*.txt"},
+	{parse.KindPython, "**/*.py"},
 }
 
 // nonYAMLKinds are the kinds in kindTable whose files are not YAML documents.
@@ -78,10 +66,10 @@ var kindTable = []kindRule{
 // sanity ignore list) and because upstream's kind map names them, so failing to
 // parse one as YAML is the expected outcome rather than a file left unchecked.
 var nonYAMLKinds = map[string]bool{
-	"jinja2":             true,
-	"text":               true,
-	"python":             true,
-	"sanity-ignore-file": true,
+	parse.KindJinja2:           true,
+	parse.KindText:             true,
+	parse.KindPython:           true,
+	parse.KindSanityIgnoreFile: true,
 }
 
 // IsYAMLKind reports whether kind names files astl reads as YAML documents.
@@ -161,7 +149,7 @@ var builtinExcludes = []string{
 	".ruff_cache",
 }
 
-// Walk collects lintables under the given roots. excluded is a list of
+// WalkWithin collects lintables under the given roots. excluded is a list of
 // gitignore-style patterns (ansible-lint hands exclude_paths to pathspec's
 // GitIgnoreSpec): an unanchored name matches at any depth, a
 // slash anchors to the working directory, `**` spans segments.
@@ -179,17 +167,10 @@ var builtinExcludes = []string{
 // traversal continues, so one unreadable directory does not lose the rest of
 // the run; callers are expected to report them as warnings.
 //
-// Entries are confined to ProjectRoot(roots, nil), which looks for no
-// configuration file; a run passes the root it found to WalkWithin instead.
-func Walk(roots []string, excluded []string) (items []Item, soft []error, err error) {
-	return WalkWithin(ProjectRoot(roots, nil), roots, excluded)
-}
-
-// WalkWithin is Walk with entries confined to project, the directory
-// ProjectRoot returns for the run. An entry below a root whose resolved path
-// lies outside project is skipped, as upstream's Runner.is_excluded skips it,
-// so a symlink in the linted tree cannot have astl read and report on a file
-// elsewhere on the host. A root itself is always linted, wherever it is, as
+// Entries are confined to project, the directory ProjectRoot returns for the
+// run. An entry below a root whose resolved path lies outside project is
+// skipped, as upstream's Runner.is_excluded skips it, so a symlink in the
+// linted tree cannot have astl read and report on a file elsewhere on the host. A root itself is always linted, wherever it is, as
 // upstream never excludes a path it was handed.
 func WalkWithin(project string, roots []string, excluded []string) (items []Item, soft []error, err error) {
 	w := &walk{
@@ -220,7 +201,7 @@ func WalkWithin(project string, roots []string, excluded []string) (items []Item
 
 // walk holds the state the traversal callback accumulates, so that visiting an
 // entry stays a named method instead of a closure over six locals. wd is
-// resolved once per Walk because rendering a display path needs it for every
+// resolved once per WalkWithin because rendering a display path needs it for every
 // entry. root is the root currently being walked, the one path exclusions and
 // project containment do not apply to. gitignores maps a directory to the spec its own `.gitignore`
 // compiled to.
@@ -346,7 +327,7 @@ func (w *walk) visitDir(p string) error {
 	if isRoleDir(p) {
 		// A role is a directory, so it contributes no source bytes of its own:
 		// the files inside it are discovered and sized separately.
-		w.add(p, KindRole, 0)
+		w.add(p, parse.KindRole, 0)
 	}
 	return nil
 }
@@ -418,13 +399,13 @@ func isRoleDir(dir string) bool {
 	return grand == "roles" && !looksLikeRole(filepath.Dir(dir))
 }
 
-// WorkingDir returns the base Walk renders its relative display paths against:
+// WorkingDir returns the base WalkWithin renders its relative display paths against:
 // the process working directory with every symlink component resolved, or ""
-// when it cannot be read, in which case Walk prints absolute paths.
+// when it cannot be read, in which case WalkWithin prints absolute paths.
 //
 // It is exported so a report that carries relative paths can also declare the
 // directory they are relative to, and be guaranteed to declare the same one
-// Walk used.
+// WalkWithin used.
 //
 // The working directory is resolved for the same reason the entries are: a
 // resolved symlink target has to be comparable to it, or a file inside the tree

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/arhuman/ansible-static-lint/internal/parse"
 )
 
 func TestKindOf(t *testing.T) {
@@ -35,6 +37,12 @@ func TestKindOf(t *testing.T) {
 	}
 }
 
+// walkUnconfigured walks roots confined to the root a run without a
+// configuration file finds for them.
+func walkUnconfigured(roots, excluded []string) ([]Item, []error, error) {
+	return WalkWithin(ProjectRoot(roots, nil), roots, excluded)
+}
+
 func TestMatchGlob(t *testing.T) {
 	tests := []struct {
 		pattern, path string
@@ -49,8 +57,8 @@ func TestMatchGlob(t *testing.T) {
 		{"**/meta/main.yml", "meta/other.yml", false},
 	}
 	for _, tc := range tests {
-		if got := matchGlob(tc.pattern, tc.path); got != tc.want {
-			t.Errorf("matchGlob(%q, %q) = %v, want %v", tc.pattern, tc.path, got, tc.want)
+		if got := compileGlob(tc.pattern).match(tc.path); got != tc.want {
+			t.Errorf("compileGlob(%q).match(%q) = %v, want %v", tc.pattern, tc.path, got, tc.want)
 		}
 	}
 }
@@ -65,18 +73,18 @@ func TestWalkSingleFileKeepsItsKind(t *testing.T) {
 	if err := os.WriteFile(file, []byte("---\n[]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	items, soft, err := Walk([]string{file}, nil)
+	items, soft, err := walkUnconfigured([]string{file}, nil)
 	if err != nil || len(soft) != 0 {
 		t.Fatalf("err=%v soft=%v", err, soft)
 	}
-	if len(items) != 1 || items[0].Kind != KindPlaybook {
+	if len(items) != 1 || items[0].Kind != parse.KindPlaybook {
 		t.Fatalf("got %+v, want one playbook", items)
 	}
 }
 
 func TestWalkRejectsMissingRoot(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
-	items, _, err := Walk([]string{missing}, nil)
+	items, _, err := walkUnconfigured([]string{missing}, nil)
 	if err == nil {
 		t.Fatalf("got %+v and no error, want an error", items)
 	}
@@ -99,7 +107,7 @@ func TestWalkReportsUnreadableDirAndContinues(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
 
-	items, soft, err := Walk([]string{dir}, nil)
+	items, soft, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatalf("unreadable subdirectory must not fail the walk: %v", err)
 	}
@@ -120,7 +128,7 @@ func TestWalkHonoursExcludePaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sub, "x.yml"), []byte("---\n{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	items, _, err := Walk([]string{dir}, []string{"vendor"})
+	items, _, err := walkUnconfigured([]string{dir}, []string{"vendor"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +154,7 @@ func TestWalkSizesSymlinksByTheirTarget(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	items, _, err := Walk([]string{link}, nil)
+	items, _, err := walkUnconfigured([]string{link}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +185,7 @@ func TestWalkSkipsIrregularFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, _, err := Walk([]string{dir}, nil)
+	items, _, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +205,7 @@ func TestWalkSkipsDanglingSymlink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(dir, "dangling.yml")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	items, _, err := Walk([]string{dir}, nil)
+	items, _, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +236,7 @@ func TestWalkReportsSymlinksUnderTheirTargetPath(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	items, _, err := Walk([]string{dir}, nil)
+	items, _, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +276,7 @@ func TestWalkKindFollowsTheSymlinkTarget(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	items, _, err := Walk([]string{dir}, nil)
+	items, _, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,13 +305,13 @@ func TestWalkRoleNeedsARoleSubdir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	items, _, err := Walk([]string{dir}, nil)
+	items, _, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	roles := map[string]bool{}
 	for _, it := range items {
-		if it.Kind == KindRole {
+		if it.Kind == parse.KindRole {
 			roles[filepath.Base(it.Abs)] = true
 		}
 	}
@@ -336,7 +344,7 @@ func TestWalkExcludeGlobs(t *testing.T) {
 		}
 	}
 	t.Chdir(dir)
-	items, _, err := Walk([]string{dir}, []string{"molecule/**/prepare.yml", "venv"})
+	items, _, err := walkUnconfigured([]string{dir}, []string{"molecule/**/prepare.yml", "venv"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +382,7 @@ func writeTree(t *testing.T, dir string, files ...string) {
 // collected returns the discovered display paths as a set.
 func collected(t *testing.T, roots []string, excluded []string) map[string]bool {
 	t.Helper()
-	items, _, err := Walk(roots, excluded)
+	items, _, err := walkUnconfigured(roots, excluded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +484,7 @@ func TestWalkUnreadableGitignoreWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, soft, err := Walk([]string{dir}, nil)
+	items, soft, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatalf("an unreadable .gitignore must not fail the walk: %v", err)
 	}
@@ -566,7 +574,7 @@ func TestWalkGitignoreReadIsBounded(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	items, soft, err := Walk([]string{dir}, nil)
+	items, soft, err := walkUnconfigured([]string{dir}, nil)
 	if err != nil {
 		t.Fatalf("a non-regular .gitignore must not fail the walk: %v", err)
 	}

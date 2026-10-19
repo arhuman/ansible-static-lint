@@ -39,7 +39,7 @@ func yamlRules(f *parse.File, opt Options) []Finding {
 // *.yml/*.yaml plus the extensionless lint configs are.
 func isYAMLBaseKind(p, kind string) bool {
 	switch kind {
-	case "jinja2", "text", "python", "sanity-ignore-file":
+	case parse.KindJinja2, parse.KindText, parse.KindPython, parse.KindSanityIgnoreFile:
 		return false
 	}
 	base := path.Base(p)

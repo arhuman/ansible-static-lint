@@ -36,7 +36,7 @@ func changedInWhen(item string) bool {
 }
 
 func noHandler(f *parse.File, t *parse.Task) []Finding {
-	if t.Kind == "handlers" {
+	if t.Kind == parse.KindHandlers {
 		return nil
 	}
 	when := t.RawGet("when")

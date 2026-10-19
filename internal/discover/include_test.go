@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/arhuman/ansible-static-lint/internal/parse"
 )
 
 // childTasks is a task list carrying a key-order violation. Its content does
@@ -35,7 +37,7 @@ func repo(t *testing.T, files map[string]string) string {
 // the include pass added, keyed by path.
 func expanded(t *testing.T, excluded ...string) map[string]string {
 	t.Helper()
-	items, soft, err := Walk([]string{"."}, excluded)
+	items, soft, err := walkUnconfigured([]string{"."}, excluded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +45,7 @@ func expanded(t *testing.T, excluded ...string) map[string]string {
 		t.Fatalf("unexpected soft errors: %v", soft)
 	}
 	out := map[string]string{}
-	for _, it := range ExpandIncludes(items, excluded) {
+	for _, it := range ExpandIncludesWithin(WorkingDir(), items, excluded) {
 		out[it.Path] = it.Kind
 	}
 	return out
@@ -332,8 +334,8 @@ func TestImportPlaybookInheritsPlaybookKind(t *testing.T) {
 			"        msg: hi\n",
 	})
 
-	if got := expanded(t)["other/second.yml"]; got != KindPlaybook {
-		t.Fatalf("other/second.yml kind = %q, want %q", got, KindPlaybook)
+	if got := expanded(t)["other/second.yml"]; got != parse.KindPlaybook {
+		t.Fatalf("other/second.yml kind = %q, want %q", got, parse.KindPlaybook)
 	}
 }
 
@@ -353,7 +355,7 @@ func TestIncludedFileIsAddedUnderBothKinds(t *testing.T) {
 		"child.yml": childTasks,
 	})
 
-	items, _, err := Walk([]string{"."}, nil)
+	items, _, err := walkUnconfigured([]string{"."}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,11 +365,11 @@ func TestIncludedFileIsAddedUnderBothKinds(t *testing.T) {
 			walked = it.Kind
 		}
 	}
-	if walked != KindYAML {
+	if walked != parse.KindYAML {
 		t.Fatalf("the walk classified child.yml as %q, want %q; the fixture no longer tests what it means to",
-			walked, KindYAML)
+			walked, parse.KindYAML)
 	}
-	if got := ExpandIncludes(items, nil); len(got) != 1 || got[0].Kind != "tasks" {
-		t.Fatalf("ExpandIncludes = %v, want one added entry under tasks beside the walk's yaml one", got)
+	if got := ExpandIncludesWithin(WorkingDir(), items, nil); len(got) != 1 || got[0].Kind != "tasks" {
+		t.Fatalf("ExpandIncludesWithin = %v, want one added entry under tasks beside the walk's yaml one", got)
 	}
 }

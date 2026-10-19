@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arhuman/ansible-static-lint/internal/discover"
 	"github.com/arhuman/ansible-static-lint/internal/format"
 	"github.com/arhuman/ansible-static-lint/internal/parse"
 	"github.com/arhuman/ansible-static-lint/internal/rules"
@@ -17,13 +16,13 @@ import (
 // argument. Kind decides which rule families run, so leaving it fixed would
 // fuzz one branch of the dispatch in run.go and none of the others.
 var fuzzKinds = []string{
-	discover.KindPlaybook,
-	discover.KindTasks,
-	discover.KindHandlers,
-	discover.KindMeta,
-	discover.KindMetaRuntime,
-	discover.KindGalaxy,
-	discover.KindYAML,
+	parse.KindPlaybook,
+	parse.KindTasks,
+	parse.KindHandlers,
+	parse.KindMeta,
+	parse.KindMetaRuntime,
+	parse.KindGalaxy,
+	parse.KindYAML,
 	"requirements",
 	"sanity-ignore-file",
 	"inventory",

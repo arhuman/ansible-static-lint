@@ -443,7 +443,7 @@ func ruleOptions(cfg config.Config, warn io.Writer) (rules.Options, error) {
 // lintItem checks one lintable. failure is non-nil when the file could not be
 // checked, and is reported by the caller rather than here so it stays counted.
 func lintItem(item discover.Item, opt rules.Options) (found []rules.Finding, failure error) {
-	if item.Kind == discover.KindRole {
+	if item.Kind == parse.KindRole {
 		return rules.RoleDir(item.Path, item.Abs), nil
 	}
 	f := parse.Load(item.Path, item.Abs, item.Kind)

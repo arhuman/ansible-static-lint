@@ -37,14 +37,14 @@ func lintableRules(f *parse.File, opt Options) []Finding {
 	var out []Finding
 	out = append(out, playbookExtension(f)...)
 	out = append(out, complexityTasks(f, opt)...)
-	if f.Kind == "galaxy" && opt.enabled("galaxy-version-incorrect") {
+	if f.Kind == parse.KindGalaxy && opt.enabled("galaxy-version-incorrect") {
 		out = append(out, galaxyVersionIncorrect(f)...)
 	}
 	return out
 }
 
 func playbookExtension(f *parse.File) []Finding {
-	if f.Kind != "playbook" {
+	if f.Kind != parse.KindPlaybook {
 		return nil
 	}
 	switch filepath.Ext(f.Path) {

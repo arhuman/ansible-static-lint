@@ -28,7 +28,7 @@ var IDs = []string{
 func File(f *parse.File, opt Options) []Finding {
 	// A sanity ignore list is not YAML, so it is checked from the raw text
 	// before the YAML preconditions below could reject it.
-	if f.Kind == "sanity-ignore-file" {
+	if f.Kind == parse.KindSanityIgnoreFile {
 		return applySkips(f, sanityRules(f))
 	}
 	// yaml[*] sees every well-formed file, as upstream's yamllint does, including
@@ -213,7 +213,7 @@ func skipped(set map[string]bool, fd Finding) bool {
 
 func isMetadataKind(kind string) bool {
 	switch kind {
-	case "yaml", "requirements", "vars", "meta", "reno", "test-meta", "galaxy", "meta-runtime":
+	case parse.KindYAML, parse.KindRequirements, parse.KindVars, parse.KindMeta, parse.KindReno, parse.KindTestMeta, parse.KindGalaxy, parse.KindMetaRuntime:
 		return true
 	}
 	return false

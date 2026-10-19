@@ -52,7 +52,7 @@ var metaDefaultValues = [][2]string{
 }
 
 func metaRules(f *parse.File) []Finding {
-	if f.Kind != "meta" || f.Root == nil {
+	if f.Kind != parse.KindMeta || f.Root == nil {
 		return nil
 	}
 	galaxyInfo := parse.MapGet(f.Root, "galaxy_info")
@@ -162,7 +162,7 @@ func videoLinkFinding(f *parse.File, video *yaml.Node) (fd Finding, bad bool) {
 }
 
 func metaRuntimeRules(f *parse.File) []Finding {
-	if f.Kind != "meta-runtime" || f.Root == nil {
+	if f.Kind != parse.KindMetaRuntime || f.Root == nil {
 		return nil
 	}
 	requires := parse.Str(parse.MapGet(f.Root, "requires_ansible"))
@@ -207,7 +207,7 @@ func validSpecifierSet(s string) bool {
 }
 
 func galaxyRules(f *parse.File) []Finding {
-	if f.Kind != "galaxy" || !parse.IsMap(f.Root) {
+	if f.Kind != parse.KindGalaxy || !parse.IsMap(f.Root) {
 		return nil
 	}
 	base := filepath.Dir(f.Abs)
@@ -303,7 +303,7 @@ func galaxyPublication(f *parse.File, base string) []Finding {
 
 // roleNameMetaDeps flags path-style role dependencies declared in meta/main.yml.
 func roleNameMetaDeps(f *parse.File) []Finding {
-	if f.Kind != "meta" || f.Root == nil {
+	if f.Kind != parse.KindMeta || f.Root == nil {
 		return nil
 	}
 	deps := parse.MapGet(f.Root, "dependencies")

@@ -63,7 +63,7 @@ func firstRune(s string) rune {
 // non-main task files, including the parent directory when it is not the
 // `tasks` directory itself.
 func taskNamePrefix(f *parse.File) string {
-	if f.Kind != "tasks" {
+	if f.Kind != parse.KindTasks {
 		return ""
 	}
 	stem := strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path))

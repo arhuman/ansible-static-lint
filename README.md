@@ -335,7 +335,7 @@ families, so it also doubles as the shortest tour of what astl catches.
 make check    # build + lint examples/, asserted against examples/expected.txt
 make test     # go test -race ./...
 make cover    # tests with coverage, fails below COVER_MIN
-make audit    # coverage gate + go mod verify + golangci-lint + govulncheck
+make audit    # coverage gate + go mod verify + golangci-lint + deadcode + govulncheck
 make parity   # pep8 output parity against the frozen ansible-lint corpus
 make bench    # both speed guards: noqa shape, then the corpus under 150 ms
 make ci       # tidy + audit + workflows + check + parity + bench, the gate before any commit

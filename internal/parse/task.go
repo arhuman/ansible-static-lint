@@ -176,7 +176,7 @@ func (f *File) buildTasks() []*Task {
 	}
 	var out []*Task
 	switch f.Kind {
-	case "playbook":
+	case KindPlaybook:
 		if !IsSeq(f.Root) {
 			return nil
 		}
@@ -185,7 +185,7 @@ func (f *File) buildTasks() []*Task {
 				out = append(out, playTasks(play)...)
 			}
 		}
-	case "tasks", "handlers":
+	case KindTasks, KindHandlers:
 		out = append(out, tasksInList(f.Root, f.Kind)...)
 	}
 	return out
@@ -197,9 +197,9 @@ func playTasks(play *yaml.Node) []*Task {
 	var out []*Task
 	for _, attr := range []string{"tasks", "pre_tasks", "post_tasks", "handlers"} {
 		section := MapGet(play, attr)
-		kind := "handlers"
+		kind := KindHandlers
 		if strings.Contains(attr, "tasks") {
-			kind = "tasks"
+			kind = KindTasks
 		}
 		out = append(out, tasksInList(section, kind)...)
 	}
@@ -218,7 +218,7 @@ func (f *File) Plays() []*yaml.Node {
 }
 
 func (f *File) buildPlays() []*yaml.Node {
-	if f.Kind != "playbook" || !IsSeq(f.Root) {
+	if f.Kind != KindPlaybook || !IsSeq(f.Root) {
 		return nil
 	}
 	var out []*yaml.Node

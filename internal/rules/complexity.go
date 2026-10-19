@@ -37,7 +37,7 @@ func complexityNesting(f *parse.File, t *parse.Task, opt Options) []Finding {
 // complexityTasks caps the tasks a task or handler file may hold. A playbook is
 // judged per play instead, by complexityPlay.
 func complexityTasks(f *parse.File, opt Options) []Finding {
-	if f.Kind != "tasks" && f.Kind != "handlers" {
+	if f.Kind != parse.KindTasks && f.Kind != parse.KindHandlers {
 		return nil
 	}
 	count := len(f.Tasks())
@@ -62,7 +62,7 @@ func runOncePlay(f *parse.File, play *yaml.Node) []Finding {
 }
 
 func runOnceTask(f *parse.File, t *parse.Task) []Finding {
-	if f.Kind != "playbook" || !truthy(t.RawGet("run_once")) {
+	if f.Kind != parse.KindPlaybook || !truthy(t.RawGet("run_once")) {
 		return nil
 	}
 	return []Finding{onLine(f, t.Pos.Line, "run-once[task]",

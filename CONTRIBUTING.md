@@ -8,7 +8,7 @@ astl has no runtime dependencies beyond the Go toolchain.
 git clone https://github.com/arhuman/ansible-static-lint
 cd ansible-static-lint
 make check     # build, then confirm the binary lints examples/ as expected
-make tools     # install the pinned golangci-lint and govulncheck
+make tools     # install the pinned golangci-lint, deadcode and govulncheck
 ```
 
 Output parity is asserted against a corpus that lives in a separate repository,
@@ -27,7 +27,7 @@ git clone https://github.com/arhuman/astl-compatibility-check ../astl-compatibil
 | `make check` | Build, lint `examples/`, and assert the findings and the exit code against `examples/expected.txt`. The quickstart, and the cheapest end-to-end proof the binary works. |
 | `make test` | Unit tests with the race detector. |
 | `make cover` | Tests with coverage; fails below `COVER_MIN`. |
-| `make audit` | Coverage gate + `go mod verify` + `golangci-lint` + `govulncheck`. The same command runs in CI. |
+| `make audit` | Coverage gate + `go mod verify` + `golangci-lint` + `deadcode` + `govulncheck`. The same command runs in CI. |
 | `make parity` | Assert pep8 output against the frozen ansible-lint corpus. Fails when the sibling repo is absent; `ALLOW_MISSING_PARITY=1` skips it knowingly. |
 | `make bench` | Both speed guards: `perfguard`, then the corpus under 150 ms (best of 5 runs). Fails when the sibling repo is absent, like `make parity`. |
 | `make perfguard` | Assert noqa resolution is still linear in the suppression count. Tagged out of the ordinary suite because it reads wall-clock time; needs no sibling repo. |

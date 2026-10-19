@@ -42,6 +42,8 @@ GOLANGCI_VERSION    ?= v2.14.0
 GOVULNCHECK_VERSION ?= v1.7.0
 ACTIONLINT_VERSION  ?= v1.7.12
 ZIZMOR_VERSION      ?= 1.31.1
+# Not in the 10x table; keep equal to the CI lint job's install.
+DEADCODE_VERSION    ?= v0.52.0
 
 # Version metadata injected via ldflags. VERSION_PKG declares Version, GitCommit
 # and BuildDate; for a single-binary CLI that is package main itself.
@@ -58,15 +60,21 @@ LDFLAGS := -s -w \
 .DEFAULT_GOAL := help
 .PHONY: audit bench build check ci clean cover fuzz help parity perfguard release test tidy tools workflows
 
-## audit: run quality control checks (mod verify, lint, vuln scan, coverage gate)
+## audit: run quality control checks (mod verify, lint, dead code, vuln scan, coverage gate)
 audit: cover
 	@which golangci-lint > /dev/null || $(MAKE) tools
+	@which deadcode > /dev/null || $(MAKE) tools
 	@which govulncheck > /dev/null || $(MAKE) tools
 	go mod verify
 	@# The private working directory is not published: a pointer into it, or an
 	@# "issue 00NN" filed there, is a reference no reader can open.
 	@! git grep -nE 'issues? 0[0-9]{3}|[.]claude/' -- ':!internal/yamlscan' || { echo "FAIL: reference to an unpublished file or issue" >&2; exit 1; }
 	golangci-lint run $(PKG)
+	@# deadcode reports without failing, so its output is the verdict. The vendored
+	@# scanner (ADR 0005) keeps upstream's unused API and is not this repo's code.
+	@out=$$(deadcode $(PKG)) || exit 1; \
+	out=$$(printf '%s\n' "$$out" | grep -v '^internal/yamlscan/' || true); \
+	if [ -n "$$out" ]; then printf '%s\n' "$$out"; echo "FAIL: unreachable functions" >&2; exit 1; fi
 	govulncheck $(PKG)
 
 ## bench: speed regression guards, corpus under 150 ms plus the noqa shape guard
@@ -185,4 +193,5 @@ tools:
 	@echo "Installing Go tools..."
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 	@go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	@go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION)
 	@echo "Tools installed in $(shell go env GOBIN || go env GOPATH)/bin"

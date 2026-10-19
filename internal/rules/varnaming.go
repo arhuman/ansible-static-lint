@@ -170,9 +170,9 @@ var noVarPrefix = varPrefix{}
 func varNamingRules(f *parse.File, opt Options) []Finding {
 	pat := opt.varNamingPattern()
 	switch f.Kind {
-	case "vars":
+	case parse.KindVars:
 		return varNamingVarsFile(f, pat)
-	case "playbook", "tasks", "handlers":
+	case parse.KindPlaybook, parse.KindTasks, parse.KindHandlers:
 		out := varNamingPlays(f, pat)
 		return append(out, varNamingTasks(f, pat)...)
 	}
@@ -236,7 +236,7 @@ func entrySkipsVarNaming(f *parse.File, entry *yaml.Node) bool {
 	}
 	// Upstream attaches aggregated noqa skips to tasks, never plays: only a task
 	// entry of a tasks or handlers file is skipped whole, by its bare rule id.
-	if f.Kind == "playbook" {
+	if f.Kind == parse.KindPlaybook {
 		return false
 	}
 	entrySkips := canonicalSkips(f.SkipsInRange(parse.NodePos(entry).Line, parse.EndLine(entry)))
