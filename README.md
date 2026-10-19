@@ -67,8 +67,8 @@ still no Python at runtime: no interpreter starts when you run `astl`. Python
 is only the delivery mechanism. `pip install ansible-static-lint` works too, in
 a virtualenv.
 
-**In GitHub Actions.** Two lines, and the action fetches and checksum-verifies
-the binary for you:
+**In GitHub Actions.** Two lines, and the action fetches the binary and
+verifies its cosign signature and checksum for you:
 
 ```yaml
       - uses: actions/checkout@v7

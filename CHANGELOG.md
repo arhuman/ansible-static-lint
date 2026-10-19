@@ -10,6 +10,11 @@ All notable changes to this project are documented here. Format:
 
 ### Changed - 2026-10-19
 
+- The GitHub Action now verifies the release's cosign signature before running
+  the binary, bound to `release.yml` at the requested tag, and then checks the
+  archive against the signed checksums. A tampered release used to pass, since
+  its checksum file came from the same release. A `version` before v0.1.2,
+  which ships no Sigstore bundle, now fails the step.
 - Each file is now read and parsed once per run. Include discovery used to read
   every playbook and task file, and parse those mentioning an include, in a
   serial pass before linting started; it now reads what the linting workers
