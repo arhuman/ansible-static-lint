@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -299,7 +300,13 @@ func sarifInvocations(workDir string) []sarifInvocation {
 	if workDir == "" {
 		return nil
 	}
-	uri := (&url.URL{Scheme: "file", Path: workDir + "/"}).String()
+	// A Windows path needs slashes and a leading one, file:///C:/x/, or its
+	// drive is read as the URI's host. A unix path passes through unchanged.
+	p := filepath.ToSlash(workDir)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	uri := (&url.URL{Scheme: "file", Path: p + "/"}).String()
 	return []sarifInvocation{{
 		ExecutionSuccessful: true,
 		WorkingDirectory:    &sarifArtifact{URI: uri},

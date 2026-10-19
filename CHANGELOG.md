@@ -21,6 +21,12 @@ All notable changes to this project are documented here. Format:
   already parsed. Output is unchanged. On a 1500-file tree whose files mention
   `include`, a run takes 98 ms instead of 276 ms.
 
+### Fixed - 2026-10-19
+
+- On Windows, the SARIF `workingDirectory` is now a valid file URI
+  (`file:///C:/...`). It used to escape the backslashes and read the drive as
+  the URI's host, so consumers could not resolve result paths against it.
+
 ## [0.7.2] - 2026-10-19
 
 ### Fixed - 2026-10-19

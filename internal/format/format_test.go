@@ -590,6 +590,18 @@ func TestSARIFRecordsWorkingDirectory(t *testing.T) {
 	}
 }
 
+// TestSARIFRecordsADriveWorkingDirectory covers the Windows shape: a drive path
+// has no leading slash, and without one the drive would become the URI's host.
+func TestSARIFRecordsADriveWorkingDirectory(t *testing.T) {
+	inv := decodeRun(t, nil, rules.IDUpstream, "C:/repo/ansible", rules.Selection{}).Runs[0].Invocations
+	if len(inv) != 1 || inv[0].WorkingDirectory == nil {
+		t.Fatalf("got invocations %+v, want one with a workingDirectory", inv)
+	}
+	if got := inv[0].WorkingDirectory.URI; got != "file:///C:/repo/ansible/" {
+		t.Errorf("workingDirectory uri = %q, want file:///C:/repo/ansible/", got)
+	}
+}
+
 // TestSARIFOmitsUnknownWorkingDirectory pins the other half: when the working
 // directory could not be read the results carry absolute paths, so there is
 // nothing to declare and an empty invocation would only assert something false.
