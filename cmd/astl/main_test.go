@@ -127,7 +127,7 @@ func TestRunViolationsExitTwo(t *testing.T) {
 // ansible-lint is the compatibility contract.
 func TestRunDefaultPEP8OutputIsUnchanged(t *testing.T) {
 	path := fixture(t, dirtyPlaybook)
-	shown := reported(t, path)
+	shown := filepath.ToSlash(reported(t, path))
 	want := shown + ":2:3: name[play][/]: All plays should be named.\n" +
 		shown + ":4: name[missing][/]: All tasks should be named.\n"
 	for _, args := range [][]string{{path}, {"--ids", "upstream", path}} {
@@ -145,7 +145,7 @@ func TestRunDefaultPEP8OutputIsUnchanged(t *testing.T) {
 // together, in both output formats.
 func TestRunNativeIDs(t *testing.T) {
 	path := fixture(t, dirtyPlaybook)
-	shown := reported(t, path)
+	shown := filepath.ToSlash(reported(t, path))
 	want := shown + ":2:3: name.play-missing: This play has no name. Add one so logs can identify it.\n" +
 		shown + ":4: name.task-missing: This task has no name. Add one so logs can identify it.\n"
 	code, stdout, stderr := runCLI(t, "--ids", "native", path)
