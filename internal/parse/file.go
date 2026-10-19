@@ -35,6 +35,26 @@ const (
 	KindSanityIgnoreFile = "sanity-ignore-file"
 )
 
+// nonYAMLKinds are the kinds whose files are not YAML documents. They are
+// discovered because astl has text-level rules for some of them (a sanity
+// ignore list) and because upstream's kind map names them, so failing to parse
+// one as YAML is the expected outcome rather than a file left unchecked.
+var nonYAMLKinds = map[string]bool{
+	KindJinja2:           true,
+	KindText:             true,
+	KindPython:           true,
+	KindSanityIgnoreFile: true,
+}
+
+// IsYAMLKind reports whether kind names files astl reads as YAML documents.
+// Callers use it to tell a parse failure that hid a file from the rules from
+// one that was never going to parse in the first place, and to keep the yaml
+// rules off files that are not YAML. An unknown kind counts as YAML: every
+// kind discovery assigns outside nonYAMLKinds is a YAML document.
+func IsYAMLKind(kind string) bool {
+	return !nonYAMLKinds[kind]
+}
+
 // File is a loaded lintable YAML file.
 type File struct {
 	// Path is the path used in output.

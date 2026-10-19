@@ -482,7 +482,7 @@ func loadFailure(f *parse.File) error {
 	if errors.As(f.Err, &pathErr) {
 		return fmt.Errorf("%s: not checked: %w", f.Path, f.Err)
 	}
-	if !discover.IsYAMLKind(f.Kind) {
+	if !parse.IsYAMLKind(f.Kind) {
 		return nil
 	}
 	return fmt.Errorf("%s: not checked, it is not valid YAML: %w", f.Path, f.Err)
