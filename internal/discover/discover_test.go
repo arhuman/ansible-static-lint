@@ -335,9 +335,7 @@ func TestWalkExcludeGlobs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	items, _, err := Walk([]string{dir}, []string{"molecule/**/prepare.yml", "venv"})
 	if err != nil {
 		t.Fatal(err)

@@ -24,6 +24,7 @@ linters:
     - revive
     - sqlclosecheck
     - staticcheck
+    - usetesting
   settings:
     dupl:
       threshold: 50
