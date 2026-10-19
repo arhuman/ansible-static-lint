@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -94,6 +95,9 @@ func TestWalkRejectsMissingRoot(t *testing.T) {
 }
 
 func TestWalkReportsUnreadableDirAndContinues(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a directory unreadable on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
@@ -474,6 +478,9 @@ func TestWalkRootGitignore(t *testing.T) {
 // A read error on an existing `.gitignore` is a warning, not a failure: the
 // repository chose the file, and refusing to lint over it would be worse.
 func TestWalkUnreadableGitignoreWarns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows, only read-only")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores file permissions")
 	}

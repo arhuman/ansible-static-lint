@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -253,6 +254,9 @@ func TestRunMissingPathIsFatal(t *testing.T) {
 }
 
 func TestRunUnreadableFileWarnsAndContinues(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows, only read-only")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores file permissions")
 	}
@@ -304,6 +308,9 @@ func TestUnparsableFileIsReportedAndNotClean(t *testing.T) {
 
 // An unreadable file is the same failure arriving by a different route.
 func TestUnreadableFileIsNotClean(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows, only read-only")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a 0o000 file regardless of its mode")
 	}
@@ -887,6 +894,9 @@ func TestConfigOutsideTheTreeConfinesTheWalk(t *testing.T) {
 // as it is. A newline in one let a pull request print a line of its choosing,
 // which GitHub Actions parses as a workflow command.
 func TestStderrCannotForgeAWorkflowCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows forbids newlines and colons in filenames")
+	}
 	path := filepath.Join(t.TempDir(), "x\n::error file=README.md,line=1::forged\n\x1b]0;T\x07q.yml")
 	if err := os.WriteFile(path, []byte("  [[[ not yaml\n"), 0o600); err != nil {
 		t.Fatal(err)
