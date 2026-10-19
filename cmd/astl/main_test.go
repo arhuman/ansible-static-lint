@@ -758,7 +758,12 @@ func TestSARIFDeclaresTheWorkingDirectory(t *testing.T) {
 	// discover.WorkingDir resolves symlinks, which is what a macOS temporary
 	// directory needs, and is the same base the relative result paths were
 	// computed against.
-	want := "file://" + discover.WorkingDir() + "/"
+	// On Windows the drive path gains a leading slash: file:///C:/Users/...
+	wd := filepath.ToSlash(discover.WorkingDir())
+	if !strings.HasPrefix(wd, "/") {
+		wd = "/" + wd
+	}
+	want := "file://" + wd + "/"
 	if inv.WorkingDirectory.URI != want {
 		t.Errorf("workingDirectory uri = %q, want %q", inv.WorkingDirectory.URI, want)
 	}
