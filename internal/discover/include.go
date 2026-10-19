@@ -1,19 +1,18 @@
 package discover
 
 import (
-	"bytes"
+	"cmp"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
+	"sync"
 
 	"github.com/arhuman/ansible-static-lint/internal/yamllint"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/arhuman/ansible-static-lint/internal/parse"
-	"github.com/arhuman/ansible-static-lint/internal/safeio"
 )
 
 // inclusionActions are the task keys that name another file of tasks or plays,
@@ -57,18 +56,23 @@ func mayBeScanned(kind string) bool {
 	return scannedKinds[kind] || kind == parse.KindYAML
 }
 
-// ExpandIncludesWithin returns the extra lintables reachable from items through
-// `include_tasks`, `import_tasks`, `include` and `import_playbook`, following
-// them to a fixpoint.
+// Includes follows `include_tasks`, `import_tasks`, `include` and
+// `import_playbook` from the files a run lints to the files they name, to a
+// fixpoint.
 //
 // This is what makes a task list linted as tasks when it does not live under a
 // `tasks/` directory. ansible-lint decides a file's kind from its path, then
 // overrides it for any file a playbook pulls in: the child inherits the section
 // it was included from.
 //
-// The returned items are additions, not replacements. A file reached both by
-// the walk and through an include is linted under both kinds, as upstream does,
-// and the duplicate findings that produces are removed by rules.Dedupe.
+// It is driven round by round so that each file is read and parsed once, by the
+// worker that lints it: the caller lints a round, hands every parsed file to
+// Found, then lints what Next returns. A round is the files one more include
+// away from the walk, which is what the round bound counts.
+//
+// The children are additions, not replacements. A file reached both by the
+// walk and through an include is linted under both kinds, as upstream does, and
+// the duplicate findings that produces are removed by rules.Dedupe.
 //
 // Only literal targets are followed. A templated path (`{{ role_path }}/x.yml`)
 // is not decidable without the ansible runtime, which ADR 0001 puts out of
@@ -78,101 +82,81 @@ func mayBeScanned(kind string) bool {
 // run. A child resolving outside it is not followed, as upstream's
 // Runner.is_excluded skips it: the input is untrusted, and a playbook naming
 // `../../etc/hosts` must not have astl read and report on it.
-func ExpandIncludesWithin(project string, items []Item, excluded []string) []Item {
-	e := &expander{
+type Includes struct {
+	wd       string
+	project  string
+	excluded *yamllint.PathSpec
+
+	mu    sync.Mutex
+	seen  map[string]bool
+	next  []Item
+	round int
+}
+
+// NewIncludes starts the fixpoint from items, the walk's lintables, which are
+// round zero and are never returned as children under the kind they hold.
+func NewIncludes(project string, items []Item, excluded []string) *Includes {
+	in := &Includes{
 		wd: WorkingDir(), project: project,
 		excluded: yamllint.ParsePathSpec(excluded), seen: map[string]bool{},
 	}
 	for _, it := range items {
-		e.seen[it.Abs+"\x00"+it.Kind] = true
+		in.seen[it.Abs+"\x00"+it.Kind] = true
 	}
+	return in
+}
 
-	frontier := items
-	// A fixpoint: each round enqueues only (path, kind) pairs not in seen, so
-	// it terminates; the round bound is a backstop against symlink loops.
-	for round := 0; len(frontier) > 0 && round < maxIncludeRounds; round++ {
-		frontier = e.expand(frontier)
+// Found records the children f names, f being parent loaded under its own
+// kind. It is safe for concurrent use within a round, and the children it
+// records are the same whatever order the round's files arrive in.
+func (in *Includes) Found(parent Item, f *parse.File) {
+	if !mayBeScanned(parent.Kind) || f.Err != nil || f.Root == nil || !scannedKinds[f.Kind] {
+		return
 	}
-	sort.Slice(e.added, func(i, j int) bool { return e.added[i].Path < e.added[j].Path })
-	return e.added
+	for _, t := range targets(f) {
+		in.admit(parent, t)
+	}
+}
+
+// Next ends the current round and returns the children Found recorded during
+// it, sorted by path. An empty result is the fixpoint.
+func (in *Includes) Next() []Item {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	next := in.next
+	in.next = nil
+	in.round++
+	slices.SortFunc(next, func(a, b Item) int {
+		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Kind, b.Kind))
+	})
+	return next
 }
 
 // maxIncludeRounds bounds the fixpoint. Real include chains are a handful deep;
 // this only exists so a pathological repository cannot spin the loop.
 const maxIncludeRounds = 32
 
-type expander struct {
-	wd       string
-	project  string
-	excluded *yamllint.PathSpec
-	seen     map[string]bool
-	added    []Item
-}
-
-// expand scans one round of parents and returns the children it found.
-func (e *expander) expand(parents []Item) []Item {
-	var next []Item
-	for _, parent := range parents {
-		if !mayBeScanned(parent.Kind) {
-			continue
-		}
-		f, ok := loadForIncludes(parent)
-		if !ok || !scannedKinds[f.Kind] {
-			continue
-		}
-		for _, t := range targets(f) {
-			child, ok := e.admit(parent, t)
-			if ok {
-				next = append(next, child)
-			}
-		}
-	}
-	return next
-}
-
-// admit resolves one target against the parent and records it, returning the
-// new item and whether it is new.
-func (e *expander) admit(parent Item, t target) (Item, bool) {
+// admit resolves one target against the parent and records it when it is new.
+// The filesystem lookups run outside the lock, so workers only serialize on the
+// seen set.
+func (in *Includes) admit(parent Item, t target) {
 	abs, ok := resolveInclude(filepath.Dir(parent.Abs), t.file)
-	if !ok || !insideDir(e.project, abs) {
-		return Item{}, false
+	if !ok || !insideDir(in.project, abs) {
+		return
 	}
-	key := abs + "\x00" + t.kind
-	if e.seen[key] {
-		return Item{}, false
+	path := displayPath(in.wd, abs)
+	if in.excluded.Match(path) {
+		return
 	}
-	path := displayPath(e.wd, abs)
-	if e.excluded.Match(path) {
-		return Item{}, false
-	}
-	e.seen[key] = true
 	item := Item{Path: path, Abs: abs, Kind: t.kind, Size: fileSize(abs)}
-	e.added = append(e.added, item)
-	return item, true
-}
-
-// loadForIncludes parses a parent only when its text mentions an inclusion at
-// all. The substring test is what keeps this pass off the critical path: most
-// task files in a repository include nothing, and skipping their parse costs
-// one read of bytes the linter was going to read anyway.
-//
-// The bytes the test read are handed to parse.LoadBytes rather than dropped, so
-// a parent that does mention one is read once here instead of twice. The read
-// stays bounded because it is this function that applies the ceiling.
-func loadForIncludes(it Item) (*parse.File, bool) {
-	data, err := safeio.ReadFile(it.Abs, safeio.MaxLintableBytes)
-	if err != nil || !mentionsInclusion(data) {
-		return nil, false
+	key := abs + "\x00" + t.kind
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.seen[key] || in.round >= maxIncludeRounds {
+		return
 	}
-	f := parse.LoadBytes(it.Path, it.Abs, it.Kind, data)
-	if f.Err != nil || f.Root == nil {
-		return nil, false
-	}
-	return f, true
-}
-
-func mentionsInclusion(data []byte) bool {
-	return bytes.Contains(data, []byte("include")) || bytes.Contains(data, []byte("import"))
+	in.seen[key] = true
+	in.next = append(in.next, item)
 }
 
 // target is one child named by an inclusion action: the path as written, and

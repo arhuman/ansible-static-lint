@@ -55,7 +55,7 @@ the walk and include expansion to it.
   when there is none, `config.Filenames()`, the same list the configuration
   search uses.
 - The same value is passed to `discover.WalkWithin` and
-  `discover.ExpandIncludesWithin`. A walked file or include child whose
+  `discover.NewIncludes`. A walked file or include child whose
   resolved path lies outside it is skipped silently, as upstream skips it.
 - A path named on the command line is always linted, wherever it resolves, as
   upstream never excludes an explicit lintable.

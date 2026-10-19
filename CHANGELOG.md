@@ -8,6 +8,14 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Changed - 2026-10-19
+
+- Each file is now read and parsed once per run. Include discovery used to read
+  every playbook and task file, and parse those mentioning an include, in a
+  serial pass before linting started; it now reads what the linting workers
+  already parsed. Output is unchanged. On a 1500-file tree whose files mention
+  `include`, a run takes 98 ms instead of 276 ms.
+
 ## [0.7.2] - 2026-10-19
 
 ### Fixed - 2026-10-19

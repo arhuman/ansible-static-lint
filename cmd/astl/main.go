@@ -359,20 +359,36 @@ func lint(paths []string, root string, cfg config.Config, sel rules.Selection, w
 	if err != nil {
 		return nil, 0, err
 	}
-	// Included files are lintables under the including section's kind, so this
-	// must precede sizing and linting.
-	items = append(items, discover.ExpandIncludesWithin(root, items, cfg.ExcludePaths)...)
-
-	// Sized from the discovered input, so it must come after the walk.
-	setMemoryLimit(items)
-
 	opt, err := ruleOptions(cfg, warn)
 	if err != nil {
 		return nil, 0, err
 	}
-	var mu sync.Mutex
+	// Each round lints the files one more include away from the walk; the
+	// workers parse each file once and report what it includes as they go.
+	includes := discover.NewIncludes(root, items, cfg.ExcludePaths)
 	var all []rules.Finding
+	var sized []discover.Item
+	for round := items; len(round) > 0; round = includes.Next() {
+		// Sized from the input discovered so far, so it follows each round.
+		sized = append(sized, round...)
+		setMemoryLimit(sized)
+		found, failed, err := lintRound(round, opt, includes, warn)
+		if err != nil {
+			return nil, 0, err
+		}
+		all = append(all, found...)
+		unchecked += failed
+	}
 
+	all = rules.Select(all, sel)
+	rules.Sort(all)
+	return rules.Dedupe(all), unchecked, nil
+}
+
+// lintRound lints items in parallel, handing every parsed file to includes so
+// the next round needs no second read. failed counts the files not checked.
+func lintRound(items []discover.Item, opt rules.Options, includes *discover.Includes, warn io.Writer) (all []rules.Finding, failed int, err error) {
+	var mu sync.Mutex
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(runtime.NumCPU())
 	// NumCPU bounds the work in flight, bytesInFlight the memory it holds;
@@ -388,11 +404,11 @@ func lint(paths []string, root string, cfg config.Config, sel rules.Selection, w
 			}
 			defer sem.Release(weight)
 
-			found, failure := lintItem(item, opt)
+			found, failure := lintItem(item, opt, includes)
 			if failure != nil {
 				mu.Lock()
 				diag(warn, "astl: %v\n", failure)
-				unchecked++
+				failed++
 				mu.Unlock()
 			}
 			if len(found) == 0 {
@@ -407,10 +423,7 @@ func lint(paths []string, root string, cfg config.Config, sel rules.Selection, w
 	if err := g.Wait(); err != nil {
 		return nil, 0, err
 	}
-
-	all = rules.Select(all, sel)
-	rules.Sort(all)
-	return rules.Dedupe(all), unchecked, nil
+	return all, failed, nil
 }
 
 // ruleOptions loads the yamllint configuration and assembles the options every
@@ -442,11 +455,12 @@ func ruleOptions(cfg config.Config, warn io.Writer) (rules.Options, error) {
 
 // lintItem checks one lintable. failure is non-nil when the file could not be
 // checked, and is reported by the caller rather than here so it stays counted.
-func lintItem(item discover.Item, opt rules.Options) (found []rules.Finding, failure error) {
+func lintItem(item discover.Item, opt rules.Options, includes *discover.Includes) (found []rules.Finding, failure error) {
 	if item.Kind == parse.KindRole {
 		return rules.RoleDir(item.Path, item.Abs), nil
 	}
 	f := parse.Load(item.Path, item.Abs, item.Kind)
+	includes.Found(item, f)
 	return rules.File(f, opt), loadFailure(f)
 }
 
