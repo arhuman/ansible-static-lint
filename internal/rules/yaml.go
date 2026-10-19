@@ -38,8 +38,7 @@ func yamlRules(f *parse.File, opt Options) []Finding {
 // jinja2 templates and files under a templates/ directory are not YAML, all
 // *.yml/*.yaml plus the extensionless lint configs are.
 func isYAMLBaseKind(p, kind string) bool {
-	switch kind {
-	case parse.KindJinja2, parse.KindText, parse.KindPython, parse.KindSanityIgnoreFile:
+	if !parse.IsYAMLKind(kind) {
 		return false
 	}
 	base := path.Base(p)

@@ -61,26 +61,6 @@ var kindTable = []kindRule{
 	{parse.KindPython, "**/*.py"},
 }
 
-// nonYAMLKinds are the kinds in kindTable whose files are not YAML documents.
-// They are discovered because astl has text-level rules for some of them (a
-// sanity ignore list) and because upstream's kind map names them, so failing to
-// parse one as YAML is the expected outcome rather than a file left unchecked.
-var nonYAMLKinds = map[string]bool{
-	parse.KindJinja2:           true,
-	parse.KindText:             true,
-	parse.KindPython:           true,
-	parse.KindSanityIgnoreFile: true,
-}
-
-// IsYAMLKind reports whether kind names files astl reads as YAML documents.
-// Callers use it to tell a parse failure that hid a file from the rules from
-// one that was never going to parse in the first place. An unknown kind counts
-// as YAML: kindTable is the only source of kinds, and every other entry in it
-// is a YAML document.
-func IsYAMLKind(kind string) bool {
-	return !nonYAMLKinds[kind]
-}
-
 // compiledKindTable is kindTable with every pattern's brace expansion and
 // segment split done once. The patterns are compile-time constants, so this is
 // pure per-call work removed from the discovery hot path: KindOf runs on every
