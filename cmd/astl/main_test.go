@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -879,5 +880,38 @@ func TestConfigOutsideTheTreeConfinesTheWalk(t *testing.T) {
 	}
 	if code, stdout, _ := runCLI(t, "-c", policy, "."); code != exitClean || stdout != "" {
 		t.Errorf("walked directory: exit %d, stdout %q, want nothing linted", code, stdout)
+	}
+}
+
+// A filename is chosen by the linted repository, and stderr reaches the CI log
+// as it is. A newline in one let a pull request print a line of its choosing,
+// which GitHub Actions parses as a workflow command.
+func TestStderrCannotForgeAWorkflowCommand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x\n::error file=README.md,line=1::forged\n\x1b]0;T\x07q.yml")
+	if err := os.WriteFile(path, []byte("  [[[ not yaml\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runCLI(t, path)
+	if code != exitIncomplete {
+		t.Errorf("got exit %d (stderr %q), want %d", code, stderr, exitIncomplete)
+	}
+	for line := range strings.Lines(stderr) {
+		if strings.HasPrefix(line, "::") {
+			t.Errorf("stderr carries a forged workflow command: %q", stderr)
+		}
+	}
+	if i := strings.IndexFunc(strings.ReplaceAll(stderr, "\n", ""), func(r rune) bool { return r < 0x20 }); i >= 0 {
+		t.Errorf("stderr carries a control character at %d: %q", i, stderr)
+	}
+}
+
+// The filter applies to arguments only: the format string is astl's own and
+// keeps its line breaks, while every verb still renders as it asked.
+func TestDiagFiltersArgumentsNotFormat(t *testing.T) {
+	var b strings.Builder
+	diag(&b, "astl: %v %s %q %d\n\n", errors.New("a\nb\x1b[31mc"), "d\u009be", "f", 7)
+	if got, want := b.String(), "astl: ab[31mc de \"f\" 7\n\n"; got != want {
+		t.Errorf("diag wrote %q, want %q", got, want)
 	}
 }

@@ -116,8 +116,23 @@ func memoryLimitFor(items []discover.Item, workers int) int64 {
 
 // diag writes a diagnostic. Its write error is dropped because a failing
 // stderr leaves nowhere to report it, and the exit code still carries the run.
+//
+// Every argument passes through format.Sanitize, because paths and config
+// values are chosen by the linted repository and a newline in one forges a line
+// of the CI log. The format string is astl's own and keeps its line breaks.
 func diag(w io.Writer, format string, a ...any) {
+	for i, v := range a {
+		a[i] = sanitized{v}
+	}
 	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+// sanitized renders its value as the verb asks, then drops the control
+// characters format.Sanitize removes.
+type sanitized struct{ v any }
+
+func (s sanitized) Format(f fmt.State, verb rune) {
+	_, _ = io.WriteString(f, format.Sanitize(fmt.Sprintf(fmt.FormatString(f, verb), s.v)))
 }
 
 // cliOptions is the parsed command line, with each long flag already folded

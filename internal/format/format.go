@@ -101,7 +101,7 @@ func writePEP8(w io.Writer, f rules.Finding, style rules.IDStyle) error {
 	if f.Column > 0 {
 		pos = fmt.Sprintf("%d:%d", f.Line, f.Column)
 	}
-	path, tag, msg := sanitize(f.Path), rules.TagFor(f.Tag, style), sanitize(f.MessageFor(style))
+	path, tag, msg := Sanitize(f.Path), rules.TagFor(f.Tag, style), Sanitize(f.MessageFor(style))
 	if style == rules.IDNative {
 		level := ""
 		if f.Warning {
@@ -124,18 +124,19 @@ func writePEP8(w io.Writer, f rules.Finding, style rules.IDStyle) error {
 	return err
 }
 
-// sanitize drops the control characters that would let text taken from the
+// Sanitize drops the control characters that would let text taken from the
 // linted repository drive the terminal it is printed to: the C0 range except
 // tab, DEL, and the C1 range, which includes ESC and so covers ANSI and OSC
 // sequences. SARIF needs no such pass, its JSON encoder escapes them.
 //
 // It runs on the path too: a filename holding a newline would split one finding
 // into two pep8 lines, enough to forge a finding against another file for the
-// editors and CI annotators that parse them.
+// editors and CI annotators that parse them. The CLI runs every stderr
+// diagnostic through it for the same reason.
 //
 // This deliberately diverges from ansible-lint, which prints the path verbatim;
 // the parity corpus has no such paths.
-func sanitize(s string) string {
+func Sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r == '\t':

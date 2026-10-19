@@ -8,6 +8,13 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+### Fixed - 2026-10-19
+
+- Diagnostics on stderr are stripped of control characters, as pep8 output
+  already was. A filename or `.yamllint` value holding a newline could print a
+  line of its choosing into the CI log, including a GitHub workflow command,
+  and ANSI or OSC sequences reached the terminal.
+
 ## [0.7.1] - 2026-10-19
 
 ### Fixed - 2026-10-19
