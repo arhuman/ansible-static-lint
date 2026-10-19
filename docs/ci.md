@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: arhuman/ansible-static-lint@v0.7.1
+      - uses: arhuman/ansible-static-lint@v0.7.2
 ```
 
 The action downloads a release binary and checks it against the published
@@ -45,7 +45,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: arhuman/ansible-static-lint@v0.7.1
+      - uses: arhuman/ansible-static-lint@v0.7.2
 ```
 
 Without the action, install the binary yourself:
@@ -79,7 +79,7 @@ while the log looks like an ordinary lint failure. Let the upload run, then
 decide:
 
 ```yaml
-      - uses: arhuman/ansible-static-lint@v0.7.1
+      - uses: arhuman/ansible-static-lint@v0.7.2
         id: astl
         with:
           format: sarif
@@ -105,7 +105,7 @@ reach code scanning and the job still goes red. Drop either that input or the
 ```yaml
 repos:
   - repo: https://github.com/arhuman/ansible-static-lint
-    rev: v0.7.1
+    rev: v0.7.2
     hooks:
       - id: astl
 ```

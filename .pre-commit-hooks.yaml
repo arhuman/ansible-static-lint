@@ -3,7 +3,7 @@
 #
 #   repos:
 #     - repo: https://github.com/arhuman/ansible-static-lint
-#       rev: v0.7.1
+#       rev: v0.7.2
 #       hooks:
 #         - id: astl
 #

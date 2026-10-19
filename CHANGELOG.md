@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-19
+
 ### Fixed - 2026-10-19
 
 - Diagnostics on stderr are stripped of control characters, as pep8 output

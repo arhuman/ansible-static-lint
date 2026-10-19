@@ -18,7 +18,7 @@ inputs:
       "latest" resolves the newest release when the job runs.
     required: false
     # The marker makes scripts/release.sh stamp and verify this pin.
-    default: v0.7.1 # release-pin
+    default: v0.7.2 # release-pin
   format:
     description: Output format, pep8 or sarif.
     required: false
