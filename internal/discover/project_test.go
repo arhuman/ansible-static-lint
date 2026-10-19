@@ -220,7 +220,7 @@ func TestExpandIncludesFollowsParentIncludeInsideProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := ExpandIncludesWithin(project, items, nil)
+	got := expandIncludes(project, items, nil)
 	want := filepath.Join(root, "common.yml")
 	if len(got) != 1 || got[0].Abs != want || got[0].Path != filepath.ToSlash(want) || got[0].Kind != parse.KindTasks {
 		t.Fatalf("expanded %+v, want %s as tasks under its absolute path", got, want)

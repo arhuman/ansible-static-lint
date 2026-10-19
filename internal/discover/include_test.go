@@ -45,10 +45,26 @@ func expanded(t *testing.T, excluded ...string) map[string]string {
 		t.Fatalf("unexpected soft errors: %v", soft)
 	}
 	out := map[string]string{}
-	for _, it := range ExpandIncludesWithin(WorkingDir(), items, excluded) {
+	for _, it := range expandIncludes(WorkingDir(), items, excluded) {
 		out[it.Path] = it.Kind
 	}
 	return out
+}
+
+// expandIncludes drives Includes the way lint does, loading every file of each
+// round, and returns all the children it added.
+func expandIncludes(project string, items []Item, excluded []string) []Item {
+	in := NewIncludes(project, items, excluded)
+	var added []Item
+	for round := items; ; {
+		for _, it := range round {
+			in.Found(it, parse.Load(it.Path, it.Abs, it.Kind))
+		}
+		if round = in.Next(); len(round) == 0 {
+			return added
+		}
+		added = append(added, round...)
+	}
 }
 
 // TestIncludedFileInheritsItsSection is the core of include expansion, and the table
@@ -369,7 +385,7 @@ func TestIncludedFileIsAddedUnderBothKinds(t *testing.T) {
 		t.Fatalf("the walk classified child.yml as %q, want %q; the fixture no longer tests what it means to",
 			walked, parse.KindYAML)
 	}
-	if got := ExpandIncludesWithin(WorkingDir(), items, nil); len(got) != 1 || got[0].Kind != "tasks" {
-		t.Fatalf("ExpandIncludesWithin = %v, want one added entry under tasks beside the walk's yaml one", got)
+	if got := expandIncludes(WorkingDir(), items, nil); len(got) != 1 || got[0].Kind != "tasks" {
+		t.Fatalf("expandIncludes = %v, want one added entry under tasks beside the walk's yaml one", got)
 	}
 }
