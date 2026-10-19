@@ -24,3 +24,13 @@ remote_main=$(git -C "$sibling" rev-parse origin/main)
   || die "sibling main ($local_main) differs from origin/main ($remote_main); push it first, the CI parity job clones the remote"
 
 echo "preflight: sibling corpus clean and pushed ($local_main)"
+
+# The CI action job runs the newest published release. The release commit
+# cannot stamp it, as it is pushed before its tag's release exists, so the pin
+# trails by one release and is held to that here instead.
+ci=.github/workflows/ci.yml
+last=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+pinned=$(sed -nE 's/^[[:space:]]*version: (v[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*# newest-release$/\1/p' "$ci")
+[ -z "$last" ] || [ "$pinned" = "$last" ] \
+  || die "$ci action job pins ${pinned:-no release}, want the newest release $last; bump it first"
+echo "preflight: $ci action job pins the newest release ($last)"

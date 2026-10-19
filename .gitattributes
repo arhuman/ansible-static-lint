@@ -2,3 +2,8 @@
 # is LF on every platform. Without this, a Windows checkout rewrites it to CRLF
 # and the comparison fails for a reason unrelated to the linter.
 examples/expected.txt text eol=lf
+
+# Tests compare these byte for byte or match them line by line with `$`, and a
+# Windows checkout would otherwise rewrite them to CRLF.
+**/testdata/** -text
+docs/rules.md text eol=lf

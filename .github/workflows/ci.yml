@@ -18,14 +18,23 @@ concurrency:
 
 jobs:
   test:
-    name: test (go ${{ matrix.go }})
-    runs-on: ubuntu-latest
+    # The Linux names predate the other runners and are required checks, so
+    # only the added runners carry a suffix.
+    name: test (go ${{ matrix.go }}${{ matrix.os != 'ubuntu-latest' && format(', {0}', matrix.os) || '' }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # Floor = the go.mod minimum (keep in sync); "stable" = latest release,
-        # which is also what release.yml ships with.
+        # which is also what release.yml ships with. Releases also ship macOS
+        # and Windows binaries, which run the suite on stable only.
+        os: [ubuntu-latest]
         go: ["1.26", "stable"]
+        include:
+          - os: macos-latest
+            go: stable
+          - os: windows-latest
+            go: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,10 +46,20 @@ jobs:
       # `make check` builds, so it replaces a bare `make build` here. It is also
       # the README quickstart, which keeps the first command a newcomer types
       # from being the one command nothing verifies.
+      # The action and wheel jobs already run the binary over the examples on
+      # macOS and Windows.
       - name: Build and smoke check the examples
+        if: runner.os == 'Linux'
         run: make check
       - name: Test (race)
+        if: runner.os != 'Windows'
         run: make test
+      # Windows runners are not guaranteed a GNU make, so this is make test's
+      # recipe run directly.
+      - name: Test (race, Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: go test -race ./...
 
   lint:
     name: lint + vuln + coverage gate
@@ -160,12 +179,14 @@ jobs:
       # downloads a release archive by design, so a change to the archive layout
       # is only proven by the run that follows its release. Keep the version
       # pinned to the newest release rather than `latest`, so a failure here
-      # names a known binary instead of drifting under the job.
+      # names a known binary instead of drifting under the job. The release
+      # commit cannot stamp it, since it is pushed before its release exists;
+      # scripts/release-preflight.sh refuses a release while it trails.
       - id: run
         uses: ./ # zizmor: ignore[self-repository] the step under test is this checkout's action.yml
         with:
           paths: examples
-          version: "0.7.0"
+          version: v0.7.2 # newest-release
           output: astl-out.txt
           fail-on-findings: "false"
       - name: Assert exit code and output
