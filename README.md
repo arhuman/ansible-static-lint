@@ -31,7 +31,7 @@ collection resolution, schema validation and `--fix`.
 **Download the binary.** No Go, no Python, no Ansible:
 
 ```sh
-VERSION=0.7.0
+VERSION=0.7.1
 OS=$(uname -s | tr 'A-Z' 'a-z')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -sSfL "https://github.com/arhuman/ansible-static-lint/releases/download/v${VERSION}/ansible-static-lint_${VERSION}_${OS}_${ARCH}.tar.gz" | tar -xz astl
@@ -72,7 +72,7 @@ the binary for you:
 
 ```yaml
       - uses: actions/checkout@v7
-      - uses: arhuman/ansible-static-lint@v0.7.0
+      - uses: arhuman/ansible-static-lint@v0.7.1
 ```
 
 **As a pre-commit hook.** pre-commit installs astl in an isolated environment
@@ -84,7 +84,7 @@ cached binary.
 ```yaml
 repos:
   - repo: https://github.com/arhuman/ansible-static-lint
-    rev: v0.7.0
+    rev: v0.7.1
     hooks:
       - id: astl
 ```
@@ -108,7 +108,7 @@ needs no runtime at all, so a native Windows binary lints the same playbooks
 from PowerShell directly.
 
 ```powershell
-$TAG = "v0.7.0"
+$TAG = "v0.7.1"
 $VERSION = $TAG.TrimStart("v")
 Invoke-WebRequest "https://github.com/arhuman/ansible-static-lint/releases/download/$TAG/ansible-static-lint_${VERSION}_windows_amd64.zip" -OutFile astl.zip
 Expand-Archive astl.zip -DestinationPath .
@@ -125,7 +125,7 @@ In GitHub Actions the action runs on Windows runners too:
 runs-on: windows-latest
 steps:
   - uses: actions/checkout@v7
-  - uses: arhuman/ansible-static-lint@v0.7.0
+  - uses: arhuman/ansible-static-lint@v0.7.1
 ```
 
 What you do **not** need: WSL, a Linux container, a Python interpreter,

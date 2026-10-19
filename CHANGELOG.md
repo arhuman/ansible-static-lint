@@ -8,6 +8,8 @@ All notable changes to this project are documented here. Format:
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-19
+
 ### Fixed - 2026-10-19
 
 - The release script now stamps every version pin it owns, however far behind
