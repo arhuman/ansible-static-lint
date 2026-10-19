@@ -2,7 +2,9 @@ package yamllint
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -119,5 +121,90 @@ func TestTopLevelConfigErrorsKeepTheirDetail(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no-such-rule") {
 		t.Errorf("detail was dropped from the operator's own config: %v", err)
+	}
+}
+
+// extendsFailure loads a config whose `extends` names target and returns the
+// error with target and the config's directory masked, so failures on
+// different targets compare by wording alone.
+func extendsFailure(t *testing.T, target string) string {
+	t.Helper()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".yamllint"), "extends: '"+target+"'\nrules: {}\n")
+	_, _, err := Load(dir)
+	if err == nil {
+		t.Fatalf("extends %s was accepted", target)
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(err.Error(), target, "TARGET"), dir, "DIR")
+}
+
+// ignoreFromFileWarning is extendsFailure for `ignore-from-file`, which warns
+// rather than fails.
+func ignoreFromFileWarning(t *testing.T, target string) string {
+	t.Helper()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".yamllint"), "ignore-from-file: '"+target+"'\n")
+	_, warnings, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %q, want one for %s", warnings, target)
+	}
+	return strings.ReplaceAll(warnings[0], target, "TARGET")
+}
+
+// unreadableTargets are paths a config can name that astl cannot read, keyed by
+// why. The CI log must not tell them apart, or a pull request could probe the
+// runner for which files exist.
+func unreadableTargets(t *testing.T) map[string]string {
+	t.Helper()
+	targets := map[string]string{
+		"missing":   filepath.Join(t.TempDir(), "absent.yml"),
+		"directory": t.TempDir(),
+	}
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		denied := filepath.Join(t.TempDir(), "denied.yml")
+		write(t, denied, "rules: {}\n")
+		if err := os.Chmod(denied, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		targets["permission denied"] = denied
+	}
+	return targets
+}
+
+func TestExtendsUnreadableTargetsShareOneWording(t *testing.T) {
+	want := extendsFailure(t, filepath.Join(t.TempDir(), "absent.yml"))
+	for why, target := range unreadableTargets(t) {
+		if got := extendsFailure(t, target); got != want {
+			t.Errorf("%s: error %q, want the same wording as a missing file: %q", why, got, want)
+		}
+	}
+}
+
+func TestIgnoreFromFileUnreadableTargetsShareOneWording(t *testing.T) {
+	want := ignoreFromFileWarning(t, filepath.Join(t.TempDir(), "absent"))
+	for why, target := range unreadableTargets(t) {
+		if got := ignoreFromFileWarning(t, target); got != want {
+			t.Errorf("%s: warning %q, want the same wording as a missing file: %q", why, got, want)
+		}
+	}
+}
+
+// Upstream yamllint follows an absolute `extends` anywhere on the host, and so
+// does astl: the reach is kept, only what its failures reveal is narrowed.
+func TestExtendsAbsolutePathOutsideTheRepositoryResolves(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "shared.yml")
+	write(t, outside, "extends: default\nrules:\n  line-length: disable\n")
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".yamllint"), "extends: '"+outside+"'\nrules: {}\n")
+
+	cfg, _, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.Contains(cfg.Describe(), "line-length: disabled") {
+		t.Errorf("the out-of-repository config was not applied:\n%s", cfg.Describe())
 	}
 }

@@ -56,11 +56,13 @@ const (
 // Errors name the path and never the content, because they reach the operator's
 // log while the content is attacker-chosen.
 //
-// One case is out of reach here: opening a FIFO blocks until a writer appears,
-// which happens before there is a descriptor to inspect. git cannot store a
-// FIFO, so reaching one needs a symlink to a FIFO that already exists on the
-// host at a path the attacker can predict.
+// The mode is checked before the open as well as after it, because opening a
+// FIFO blocks until a writer appears, before there is a descriptor to inspect.
+// git cannot store a FIFO, but a symlink or a configured path can name one.
 func ReadFile(path string, limit int64) ([]byte, error) {
+	if info, err := os.Stat(path); err == nil && !info.Mode().IsRegular() {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: errNotRegular}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

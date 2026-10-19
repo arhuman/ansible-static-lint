@@ -50,7 +50,14 @@ does. A symlink whose target, or an include whose file, resolves outside that
 root is not read. Paths named on the command line are exempt, since the
 operator chose them. See `docs/adr/0010-project-root.md`.
 
-One case is knowingly out of reach. Opening a FIFO blocks until a writer
-appears, which happens before there is a descriptor to inspect. git cannot store
-a FIFO, so reaching one requires a symlink to a FIFO that already exists on the
-host at a path the attacker can predict.
+A FIFO is refused before it is opened, since opening one blocks until a writer
+appears.
+
+One reach is kept on purpose, because upstream yamllint has it. The `extends`
+and `ignore-from-file` keys of a repository's `.yamllint` may name any path,
+absolute ones included, and are not confined to the project root. A linted
+repository can therefore make astl read any readable regular file on the host,
+within the 4 MiB configuration ceiling. Nothing read that way is printed, and a
+target that is missing, unreadable, denied or not a regular file is reported in
+one wording, so the log does not say which. A readable target still behaves as
+a configuration: whether it parsed is visible in the result.

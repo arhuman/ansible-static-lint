@@ -14,6 +14,10 @@ All notable changes to this project are documented here. Format:
   already was. A filename or `.yamllint` value holding a newline could print a
   line of its choosing into the CI log, including a GitHub workflow command,
   and ANSI or OSC sequences reached the terminal.
+- A FIFO named by a `.yamllint` `extends` or `ignore-from-file`, or reached
+  through a symlink, is refused instead of hanging the run, in the same wording
+  as a missing file. SECURITY.md now documents that these keys may name any
+  readable file on the host, as in upstream yamllint.
 
 ## [0.7.1] - 2026-10-19
 

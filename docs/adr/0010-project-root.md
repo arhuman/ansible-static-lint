@@ -77,7 +77,9 @@ Out of scope:
 
 - **Configuration lookup is unchanged.** Upstream loads its configuration before
   it computes the root and independently of it, and so does astl. The root only
-  consumes which file was loaded.
+  consumes which file was loaded. The paths a `.yamllint` names in `extends`
+  and `ignore-from-file` are not confined either, as in upstream yamllint;
+  SECURITY.md states what that reach allows.
 - **`--project-dir` and the `project_dir` key.** astl supports neither today, so
   the root is always the computed one. Adding them is a separate decision.
 
