@@ -73,13 +73,6 @@ linters:
           - gosec
         text: "G304: Potential file inclusion via variable"
         path: internal/safeio/
-      # Same reasoning for the yamllint configuration search: the paths come
-      # from the operator's own working directory and environment, and reading
-      # what they point at is the feature. See internal/yamllint/load.go.
-      - linters:
-          - gosec
-        text: "G703: Path traversal via taint analysis"
-        path: internal/yamllint/
       # Test fixtures need traversable directories and, for the unreadable-path
       # tests, deliberately odd modes. Neither ships in the binary.
       # Tests also skip the complexity gates: a table-driven test or a fuzz

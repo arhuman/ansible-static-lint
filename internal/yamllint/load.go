@@ -126,7 +126,7 @@ func findConfig(dir string) string {
 
 // isFile reports whether p names something other than a directory.
 func isFile(p string) bool {
-	fi, err := os.Stat(p)
+	fi, err := os.Stat(p) //nolint:gosec // G703: p is built from the working directory, YAMLLINT_CONFIG_FILE or XDG_CONFIG_HOME, all the operator's, and Stat reads no content.
 	return err == nil && !fi.IsDir()
 }
 
