@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -135,7 +136,7 @@ func extendsFailure(t *testing.T, target string) string {
 	if err == nil {
 		t.Fatalf("extends %s was accepted", target)
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(err.Error(), target, "TARGET"), dir, "DIR")
+	return redact(redact(err.Error(), target, "TARGET"), dir, "DIR")
 }
 
 // ignoreFromFileWarning is extendsFailure for `ignore-from-file`, which warns
@@ -151,7 +152,15 @@ func ignoreFromFileWarning(t *testing.T, target string) string {
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %q, want one for %s", warnings, target)
 	}
-	return strings.ReplaceAll(warnings[0], target, "TARGET")
+	return redact(warnings[0], target, "TARGET")
+}
+
+// redact replaces path in s with label, both as printed raw and as printed by
+// %q, which doubles a Windows path's backslashes.
+func redact(s, path, label string) string {
+	q := strconv.Quote(path)
+	s = strings.ReplaceAll(s, q[1:len(q)-1], label)
+	return strings.ReplaceAll(s, path, label)
 }
 
 // unreadableTargets are paths a config can name that astl cannot read, keyed by
