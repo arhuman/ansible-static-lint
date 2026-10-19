@@ -73,6 +73,35 @@ func TestConfiguredRuleVariants(t *testing.T) {
 			input: "%YAML 1.2\n---\na: yes\nb: True\n",
 			want:  []string{"4:4 truthy truthy value should be one of [false, true]"},
 		},
+		{
+			name: "line-length non-breakable inline mappings",
+			cfg: base(func(c *Config) {
+				c.rules["line-length"].opts["max"] = 20
+				c.rules["line-length"].opts["allow-non-breakable-inline-mappings"] = true
+			}),
+			input: "---\nlong_line: http://localhost/very/very/long/url\nlong line: http://localhost/very/very/long/url\nshort_url: http://localhost/short/url + word\nlong: [http://localhost/very/very/long/url]\n",
+			want: []string{
+				"4:21 line-length line too long (44 > 20 characters)",
+				"5:21 line-length line too long (43 > 20 characters)",
+			},
+		},
+		{
+			name: "line-length non-breakable inline mapping in a sequence",
+			cfg: base(func(c *Config) {
+				c.rules["line-length"].opts["max"] = 20
+				c.rules["line-length"].opts["allow-non-breakable-inline-mappings"] = true
+			}),
+			input: "---\n- long line: http://localhost/very/very/long/url\n",
+		},
+		{
+			name: "line-length inline mappings not allowed",
+			cfg: base(func(c *Config) {
+				c.rules["line-length"].opts["max"] = 20
+				c.rules["line-length"].opts["allow-non-breakable-inline-mappings"] = false
+			}),
+			input: "---\nlong_line: http://localhost/very/very/long/url\n",
+			want:  []string{"2:21 line-length line too long (46 > 20 characters)"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
